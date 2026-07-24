@@ -58,4 +58,39 @@ export function fetchHistory(token) {
   return request("/history", { token });
 }
 
+export function joinQueue(token, { serviceId, priority, displayName }) {
+  return request("/queue/join", {
+    method: "POST",
+    token,
+    body: { serviceId, priority, displayName },
+  });
+}
+
+export function leaveQueue(token, { serviceId }) {
+  return request("/queue/leave", {
+    method: "POST",
+    token,
+    body: { serviceId },
+  });
+}
+
+export function fetchMyQueues(token) {
+  return request("/queue/me", { token });
+}
+
+export function fetchQueueForService(token, serviceId) {
+  return request(`/queue/${serviceId}`, { token });
+}
+
+export function fetchQueueSummary(token) {
+  return request("/queue/summary", { token });
+}
+
+export function serveNextUser(token, serviceId) {
+  return request(`/queue/${serviceId}/serve-next`, {
+    method: "POST",
+    token,
+  });
+}
+
 export { ApiRequestError };

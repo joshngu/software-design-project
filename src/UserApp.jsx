@@ -1,13 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ticket, LogOut, LayoutDashboard, ListPlus, Clock, History as HistoryIcon } from "lucide-react";
 
 import { COLORS } from "./QueueSmartAuth";
-import { SERVICES } from "./userData";
 import { NotificationBell, NotificationProvider } from "./Notifications";
 import UserDashboardScreen from "./UserDashboardScreen";
 import JoinQueueScreen from "./JoinQueueScreen";
 import QueueStatusScreen from "./QueueStatusScreen";
 import HistoryScreen from "./HistoryScreen";
+import { fetchServices } from "./api";
 
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -23,7 +23,25 @@ const TABS = [
 --------------------------------------------------------- */
 export default function UserApp({ user, token, onLogout }) {
   const [screen, setScreen] = useState("dashboard");
-  const [selectedServiceId, setSelectedServiceId] = useState(SERVICES[0].id);
+  const [services, setServices] = useState([]);
+  const [selectedServiceId, setSelectedServiceId] = useState(null);
+  const [servicesError, setServicesError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchServices(token)
+      .then(({ services: fetched }) => {
+        if (cancelled) return;
+        setServices(fetched);
+        setSelectedServiceId((prev) => prev ?? fetched[0]?.id ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) setServicesError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   function goTo(id) {
     setScreen(id);
@@ -64,13 +82,28 @@ export default function UserApp({ user, token, onLogout }) {
       </nav>
 
       <main className="px-6 md:px-12 py-10 max-w-4xl mx-auto">
+        {servicesError && (
+          <p className="text-sm mb-4" style={{ color: COLORS.coral }}>
+            {servicesError}
+          </p>
+        )}
         {screen === "dashboard" && (
-          <UserDashboardScreen user={user} goJoin={() => goTo("join")} goStatus={() => goTo("status")} />
+          <UserDashboardScreen
+            user={user}
+            services={services}
+            goJoin={() => goTo("join")}
+            goStatus={() => goTo("status")}
+          />
         )}
         {screen === "join" && (
-          <JoinQueueScreen selectedServiceId={selectedServiceId} setSelectedServiceId={setSelectedServiceId} />
+          <JoinQueueScreen
+            token={token}
+            services={services}
+            selectedServiceId={selectedServiceId}
+            setSelectedServiceId={setSelectedServiceId}
+          />
         )}
-        {screen === "status" && <QueueStatusScreen />}
+        {screen === "status" && <QueueStatusScreen token={token} />}
         {screen === "history" && <HistoryScreen token={token} />}
       </main>
     </div>

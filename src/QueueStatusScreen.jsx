@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Circle } from "lucide-react";
 
 import { COLORS, FONT_MONO } from "./QueueSmartAuth";
-import { useNotifications } from "./Notifications";
+import { fetchMyQueues } from "./api";
 
 const STATUS_STEPS = [
   { id: "waiting", label: "Waiting" },
@@ -10,38 +10,38 @@ const STATUS_STEPS = [
   { id: "served", label: "Served" },
 ];
 
-const MOCK_APPOINTMENT = {
-  service: "General Checkup",
-  time: "10:30 AM",
-  startMinutesUntil: 21,
-};
-
 /* ---------------------------------------------------------
-   Queue Status — booked appointment, time until it starts,
-   and a status stepper
+  Queue Status — active queue status from backend data.
 --------------------------------------------------------- */
-export default function QueueStatusScreen() {
-  const { notify } = useNotifications();
-  const [minutesUntil, setMinutesUntil] = useState(MOCK_APPOINTMENT.startMinutesUntil);
-  const currentStep = minutesUntil === 0 ? "served" : minutesUntil <= 9 ? "almost" : "waiting";
-  const prevStep = useRef(currentStep);
+export default function QueueStatusScreen({ token }) {
+  const [activeQueue, setActiveQueue] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  useEffect(() => { 
-    if (prevStep.current === currentStep) return;
-    prevStep.current = currentStep;
-
-    if (currentStep === "almost") {
-      notify({
-        title: "Almost ready",
-        body: `${MOCK_APPOINTMENT.service} will call you in a few minutes.`,
-      });
-    } else if (currentStep === "served") {
-      notify({
-        title: `${MOCK_APPOINTMENT.service} — served`,
-        body: "Your appointment has been completed.",
-      });
+  async function loadQueueStatus() {
+    setLoading(true);
+    setLoadError("");
+    try {
+      const { activeQueue: queue } = await fetchMyQueues(token);
+      setActiveQueue(queue || null);
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setLoading(false);
     }
-  }, [currentStep, notify]);
+  }
+
+  useEffect(() => {
+    loadQueueStatus();
+  }, [token]);
+
+  const currentStep = useMemo(() => {
+    if (!activeQueue) return "served";
+    if (activeQueue.position <= 1 || activeQueue.estimatedWaitMinutes <= activeQueue.expectedDuration) {
+      return "almost";
+    }
+    return "waiting";
+  }, [activeQueue]);
 
   return (
     <div className="space-y-6">
@@ -55,58 +55,60 @@ export default function QueueStatusScreen() {
       </div>
 
       <div className="rounded-2xl p-6" style={{ background: "#fff", border: `1px solid ${COLORS.line}` }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs" style={{ color: COLORS.slate }}>
-              {MOCK_APPOINTMENT.service}
-            </p>
-            <p className="text-4xl font-semibold mt-1" style={{ fontFamily: FONT_MONO, color: COLORS.ink }}>
-              {MOCK_APPOINTMENT.time}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs" style={{ color: COLORS.slate }}>
-              Time until appointment
-            </p>
-            <p className="text-2xl font-semibold" style={{ color: COLORS.ink }}>
-              {minutesUntil} min
-            </p>
-          </div>
-        </div>
+        {loadError && <p style={{ color: COLORS.coral }}>{loadError}</p>}
+        {!loadError && loading && <p style={{ color: COLORS.slate }}>Loading queue status...</p>}
+        {!loadError && !loading && !activeQueue && (
+          <p style={{ color: COLORS.slate }}>You are not currently in any queue.</p>
+        )}
 
-        <div className="mt-4 h-2 rounded-full" style={{ background: COLORS.line }}>
-          <div
-            className="h-2 rounded-full"
-            style={{
-              width: `${Math.max(6, (1 - minutesUntil / MOCK_APPOINTMENT.startMinutesUntil) * 100)}%`,
-              background: COLORS.amber,
-            }}
-          />
-        </div>
-        <p className="mt-2 text-xs" style={{ color: COLORS.slate }}>
-          {minutesUntil === 0
-            ? "It's your turn — please check in at the desk."
-            : `Estimated wait: ~${minutesUntil} min`}
-        </p>
+        {!loadError && !loading && activeQueue && (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs" style={{ color: COLORS.slate }}>
+                  {activeQueue.serviceName}
+                </p>
+                <p className="text-4xl font-semibold mt-1" style={{ fontFamily: FONT_MONO, color: COLORS.ink }}>
+                  #{activeQueue.position}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs" style={{ color: COLORS.slate }}>
+                  Estimated wait
+                </p>
+                <p className="text-2xl font-semibold" style={{ color: COLORS.ink }}>
+                  {activeQueue.estimatedWaitMinutes} min
+                </p>
+              </div>
+            </div>
 
-        <StatusStepper current={currentStep} />
+            <div className="mt-4 h-2 rounded-full" style={{ background: COLORS.line }}>
+              <div
+                className="h-2 rounded-full"
+                style={{
+                  width: `${Math.max(6, Math.min(100, (1 / activeQueue.position) * 100))}%`,
+                  background: COLORS.amber,
+                }}
+              />
+            </div>
+            <p className="mt-2 text-xs" style={{ color: COLORS.slate }}>
+              Expected duration per user: {activeQueue.expectedDuration} min
+            </p>
 
-        <div className="flex flex-wrap gap-3 mt-6">
-          <button
-            onClick={() => setMinutesUntil((m) => Math.max(0, m - 3))}
-            className="qs-btn text-xs font-medium px-3 py-2 rounded-lg"
-            style={{ background: COLORS.ink, color: COLORS.paper }}
-          >
-            (Demo) simulate time passing
-          </button>
-          <button
-            type="button"
-            className="qs-btn text-xs font-medium px-3 py-2 rounded-lg"
-            style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}
-          >
-            Cancel appointment
-          </button>
-        </div>
+            <StatusStepper current={currentStep} />
+
+            <div className="flex flex-wrap gap-3 mt-6">
+              <button
+                type="button"
+                onClick={loadQueueStatus}
+                className="qs-btn text-xs font-medium px-3 py-2 rounded-lg"
+                style={{ background: COLORS.ink, color: COLORS.paper }}
+              >
+                Refresh status
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

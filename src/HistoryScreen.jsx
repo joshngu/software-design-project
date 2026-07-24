@@ -2,15 +2,7 @@ import { useEffect, useState } from "react";
 
 import { COLORS, FONT_MONO } from "./QueueSmartAuth";
 import { OutcomeBadge } from "./UserBadges";
-import { fetchHistory } from "./api";
-
-// Service names aren't included on history entries (the backend only stores
-// serviceId), so we look them up here for display purposes.
-const SERVICE_NAMES = {
-  1: "General Checkup",
-  2: "Vaccination",
-  3: "Lab Work",
-};
+import { fetchHistory, fetchServices } from "./api";
 
 const OUTCOME_LABELS = {
   served: "Served",
@@ -31,15 +23,22 @@ function formatTime(iso) {
 --------------------------------------------------------- */
 export default function HistoryScreen({ token }) {
   const [history, setHistory] = useState([]);
+  const [serviceNames, setServiceNames] = useState({});
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchHistory(token)
-      .then(({ history: fetched }) => {
-        if (!cancelled) setHistory(fetched);
+    Promise.all([fetchHistory(token), fetchServices(token)])
+      .then(([historyRes, servicesRes]) => {
+        if (cancelled) return;
+        setHistory(historyRes.history);
+        const names = {};
+        servicesRes.services.forEach((service) => {
+          names[service.id] = service.name;
+        });
+        setServiceNames(names);
       })
       .catch((err) => {
         if (!cancelled) setLoadError(err.message);
@@ -106,7 +105,7 @@ export default function HistoryScreen({ token }) {
                     {formatTime(h.joinedAt)}
                   </td>
                   <td className="px-5 py-3" style={{ color: COLORS.ink }}>
-                    {SERVICE_NAMES[h.serviceId] || `Service #${h.serviceId}`}
+                    {serviceNames[h.serviceId] || `Service #${h.serviceId}`}
                   </td>
                   <td className="px-5 py-3">
                     <OutcomeBadge outcome={OUTCOME_LABELS[h.outcome] || h.outcome} />

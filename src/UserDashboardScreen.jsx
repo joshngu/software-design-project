@@ -1,6 +1,5 @@
 import { COLORS, FONT_MONO } from "./QueueSmartAuth";
 import { StatusBadge } from "./UserBadges";
-import { SERVICES } from "./userData";
 import { useNotifications } from "./Notifications";
 
 function timeAgo(ts) { 
@@ -16,7 +15,7 @@ function timeAgo(ts) {
 /* ---------------------------------------------------------
    User Dashboard — overview, active services, notifications
 --------------------------------------------------------- */
-export default function UserDashboardScreen({ user, goJoin, goStatus }) {
+export default function UserDashboardScreen({ user, services, goJoin, goStatus }) {
   const name = user?.email ? user.email.split("@")[0] : "there";
   const { items: notifications } = useNotifications();
 
@@ -34,10 +33,10 @@ export default function UserDashboardScreen({ user, goJoin, goStatus }) {
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl p-6" style={{ background: "#fff", border: `1px solid ${COLORS.line}` }}>
           <h2 className="text-sm font-semibold mb-1" style={{ color: COLORS.ink }}>
-            Current appointment
+            Queue tracker
           </h2>
           <p className="text-sm" style={{ color: COLORS.slate }}>
-            You're booked for <strong>General Checkup</strong> at <strong>10:30 AM</strong>.
+            Check your live queue position and estimated wait time from the backend.
           </p>
           <button
             onClick={goStatus}
@@ -53,12 +52,17 @@ export default function UserDashboardScreen({ user, goJoin, goStatus }) {
             Active services
           </h2>
           <ul className="space-y-2">
-            {SERVICES.map((s) => (
+            {services.map((s) => (
               <li key={s.id} className="flex items-center justify-between text-sm">
                 <span style={{ color: COLORS.ink }}>{s.name}</span>
-                <StatusBadge status={s.status} />
+                <StatusBadge status="open" />
               </li>
             ))}
+            {services.length === 0 && (
+              <li className="text-sm" style={{ color: COLORS.slate }}>
+                No services available.
+              </li>
+            )}
           </ul>
           <button
             onClick={goJoin}
@@ -78,7 +82,7 @@ export default function UserDashboardScreen({ user, goJoin, goStatus }) {
           {notifications.slice(0, 4).map((n) => (
             <li key={n.id} className="flex items-start gap-3 text-sm">
               <span
-                className="mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0"
+                className="mt-1.5 h-1.5 w-1.5 rounded-full shrink-0"
                 style={{ background: n.read ? COLORS.line : COLORS.coral }}
               />
               <div>

@@ -1,24 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchServices, createService, updateService } from "./api";
-
-const initialQueues = {
-  1: [
-    { name: "Alicia", time: "9:00 AM" },
-    { name: "Marco", time: "9:30 AM" },
-    { name: "Dina", time: "10:30 AM" },
-    { name: "Ben", time: "11:00 AM" },
-  ],
-  2: [
-    { name: "Sarah", time: "9:15 AM" },
-    { name: "Tyson", time: "10:00 AM" },
-  ],
-  3: [
-    { name: "Mina", time: "9:00 AM" },
-    { name: "Raj", time: "9:20 AM" },
-    { name: "Felix", time: "9:40 AM" },
-  ],
-};
+import {
+  fetchServices,
+  createService,
+  updateService,
+  fetchQueueSummary,
+  fetchQueueForService,
+  serveNextUser as apiServeNextUser,
+} from "./api";
 
 const blankForm = {
   name: "",
@@ -30,42 +19,81 @@ const blankForm = {
 export default function App({ userEmail, token, onLogout }) {
   const [activeScreen, setActiveScreen] = useState("dashboard");
   const [services, setServices] = useState([]);
-  const [queues, setQueues] = useState(initialQueues);
   const [loadError, setLoadError] = useState("");
+  const [queueLoadError, setQueueLoadError] = useState("");
+  const [queueSummaryByService, setQueueSummaryByService] = useState({});
+  const [selectedQueueEntries, setSelectedQueueEntries] = useState([]);
+  const [servingNext, setServingNext] = useState(false);
 
   const [isQueueOpen, setIsQueueOpen] = useState(true);
-  const [selectedServiceId, setSelectedServiceId] = useState(1);
+  const [selectedServiceId, setSelectedServiceId] = useState(null);
 
   const [formData, setFormData] = useState(blankForm);
   const [editingServiceId, setEditingServiceId] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
 
+  async function refreshQueueSummary() {
+    const { summary } = await fetchQueueSummary(token);
+    const mapped = {};
+    summary.forEach((item) => {
+      mapped[item.serviceId] = item.queueLength;
+    });
+    setQueueSummaryByService(mapped);
+  }
+
+  async function refreshQueueForService(serviceId) {
+    if (!serviceId) {
+      setSelectedQueueEntries([]);
+      return;
+    }
+    const { queue } = await fetchQueueForService(token, serviceId);
+    setSelectedQueueEntries(queue);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    fetchServices(token)
-      .then(({ services: fetched }) => {
+    Promise.all([fetchServices(token), fetchQueueSummary(token)])
+      .then(([servicesRes, queueSummaryRes]) => {
         if (cancelled) return;
+        const fetched = servicesRes.services;
         setServices(fetched);
-        setQueues((prev) => {
-          const next = { ...prev };
-          fetched.forEach((service) => {
-            if (!next[service.id]) next[service.id] = [];
-          });
-          return next;
+        const mapped = {};
+        queueSummaryRes.summary.forEach((item) => {
+          mapped[item.serviceId] = item.queueLength;
         });
+        setQueueSummaryByService(mapped);
+        setSelectedServiceId((prev) => prev ?? fetched[0]?.id ?? null);
       })
       .catch((err) => {
-        if (!cancelled) setLoadError(err.message);
+        if (!cancelled) {
+          setLoadError(err.message);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!selectedServiceId) return;
+    let cancelled = false;
+    setQueueLoadError("");
+    fetchQueueForService(token, selectedServiceId)
+      .then(({ queue }) => {
+        if (!cancelled) setSelectedQueueEntries(queue);
+      })
+      .catch((err) => {
+        if (!cancelled) setQueueLoadError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, selectedServiceId]);
+
   const totalQueuedUsers = useMemo(
-    () => Object.values(queues).reduce((sum, queue) => sum + queue.length, 0),
-    [queues]
+    () => Object.values(queueSummaryByService).reduce((sum, count) => sum + count, 0),
+    [queueSummaryByService]
   );
 
   function handleFieldChange(event) {
@@ -93,7 +121,8 @@ export default function App({ userEmail, token, onLogout }) {
       } else {
         const { service } = await createService(token, payload);
         setServices((prev) => [...prev, service]);
-        setQueues((prev) => ({ ...prev, [service.id]: [] }));
+        setQueueSummaryByService((prev) => ({ ...prev, [service.id]: 0 }));
+        setSelectedServiceId((prev) => prev ?? service.id);
       }
       setEditingServiceId(null);
       setFormData(blankForm);
@@ -125,37 +154,19 @@ export default function App({ userEmail, token, onLogout }) {
     setFormErrors({});
   }
 
-  function moveUser(serviceId, fromIndex, toIndex) {
-    if (toIndex < 0) return;
-
-    setQueues((prev) => {
-      const queue = [...(prev[serviceId] || [])];
-      if (toIndex >= queue.length) return prev;
-
-      const [user] = queue.splice(fromIndex, 1);
-      queue.splice(toIndex, 0, user);
-
-      return { ...prev, [serviceId]: queue };
-    });
+  async function handleServeNextUser(serviceId) {
+    setServingNext(true);
+    setQueueLoadError("");
+    try {
+      await apiServeNextUser(token, serviceId);
+      await Promise.all([refreshQueueSummary(), refreshQueueForService(serviceId)]);
+    } catch (err) {
+      setQueueLoadError(err.message);
+    } finally {
+      setServingNext(false);
+    }
   }
-
-  function removeUser(serviceId, index) {
-    setQueues((prev) => {
-      const queue = [...(prev[serviceId] || [])];
-      queue.splice(index, 1);
-      return { ...prev, [serviceId]: queue };
-    });
-  }
-
-  function serveNextUser(serviceId) {
-    setQueues((prev) => {
-      const queue = [...(prev[serviceId] || [])];
-      queue.shift();
-      return { ...prev, [serviceId]: queue };
-    });
-  }
-
-  const selectedQueue = queues[selectedServiceId] || [];
+  const selectedQueue = selectedQueueEntries;
 
   return (
     <div className="app-shell">
@@ -213,7 +224,7 @@ export default function App({ userEmail, token, onLogout }) {
                 <ul className="simple-list">
                   {services.map((service) => (
                     <li key={service.id}>
-                      {service.name}: {queues[service.id]?.length || 0}
+                      {service.name}: {queueSummaryByService[service.id] || 0}
                     </li>
                   ))}
                 </ul>
@@ -383,8 +394,9 @@ export default function App({ userEmail, token, onLogout }) {
               <label>
                 Select Service
                 <select
-                  value={selectedServiceId}
+                  value={selectedServiceId ?? ""}
                   onChange={(event) => setSelectedServiceId(Number(event.target.value))}
+                  disabled={services.length === 0}
                 >
                   {services.map((service) => (
                     <option key={service.id} value={service.id}>
@@ -397,45 +409,29 @@ export default function App({ userEmail, token, onLogout }) {
               <div className="inline-actions top-margin">
                 <button
                   className="btn btn-primary"
-                  onClick={() => serveNextUser(selectedServiceId)}
-                  disabled={selectedQueue.length === 0}
+                  onClick={() => handleServeNextUser(selectedServiceId)}
+                  disabled={selectedQueue.length === 0 || servingNext}
                 >
-                  Serve Next User (Simulation)
+                  {servingNext ? "Serving..." : "Serve Next User"}
                 </button>
               </div>
 
+              {queueLoadError && <p className="error top-margin">{queueLoadError}</p>}
+
               {selectedQueue.length === 0 ? (
-                <p className="top-margin">No appointments booked for this service.</p>
+                <p className="top-margin">No users currently waiting for this service.</p>
               ) : (
                 <ul className="queue-list top-margin">
-                  {selectedQueue.map((appointment, index) => (
-                    <li key={`${appointment.name}-${index}`}>
+                  {selectedQueue.map((appointment) => (
+                    <li key={appointment.id}>
                       <span>
-                        #{index + 1} {appointment.name}
-                        <span className="appointment-time"> — {appointment.time}</span>
+                        #{appointment.position} {appointment.displayName}
+                        <span className="appointment-time">
+                          {" "}
+                          — Priority: {appointment.priority}, Est. wait:{" "}
+                          {appointment.estimatedWaitMinutes} min
+                        </span>
                       </span>
-                      <div className="inline-actions">
-                        <button
-                          className="btn"
-                          onClick={() => moveUser(selectedServiceId, index, index - 1)}
-                          disabled={index === 0}
-                        >
-                          Up
-                        </button>
-                        <button
-                          className="btn"
-                          onClick={() => moveUser(selectedServiceId, index, index + 1)}
-                          disabled={index === selectedQueue.length - 1}
-                        >
-                          Down
-                        </button>
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => removeUser(selectedServiceId, index)}
-                        >
-                          Remove
-                        </button>
-                      </div>
                     </li>
                   ))}
                 </ul>

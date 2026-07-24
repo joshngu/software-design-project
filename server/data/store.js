@@ -95,16 +95,31 @@ function seedHistory() {
   ];
 }
 
+function seedQueueEntries() {
+  return [
+    {
+      id: 1,
+      userId: 1,
+      displayName: "Jane",
+      serviceId: 1,
+      priority: "medium",
+      joinedAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
+    },
+  ];
+}
+
 export const db = {
   users: seedUsers(),
   services: seedServices(),
   sessions: new Map(), // token -> { userId }
   nextUserId: 3,
   nextServiceId: 4,
-  notifications: seedNotifications(),        
-  nextNotificationId: 3,    
-  history: seedHistory(),             
-  nextHistoryId: 4, 
+  notifications: seedNotifications(),
+  nextNotificationId: 3,
+  history: seedHistory(),
+  nextHistoryId: 4,
+  queueEntries: seedQueueEntries(),
+  nextQueueEntryId: 2,
 };
 
 /** Resets the in-memory store to its seeded state — used between test runs. */
@@ -116,6 +131,8 @@ export function resetStore() {
   db.nextServiceId = 4;
   db.notifications = seedNotifications();
   db.nextNotificationId = 3;
-  db.history = seedNotifications(); 
-  db.nextHistoryId = 4;     
+  db.history = seedHistory();
+  db.nextHistoryId = 4;
+  db.queueEntries = seedQueueEntries();
+  db.nextQueueEntryId = 2;
 }
