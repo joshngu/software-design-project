@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { db, resetStore } from "../../data/store.js";
+import { resetTestDb } from "../../data/db.js";
 import {
   notify,
   notifyQueueJoined,
@@ -10,9 +10,7 @@ import {
 } from "./notifications.service.js";
 
 beforeEach(() => {
-  resetStore();
-  db.notifications = [];
-  db.nextNotificationId = 1;
+  resetTestDb({ seedActivity: false });
 });
 
 describe("notify", () => {

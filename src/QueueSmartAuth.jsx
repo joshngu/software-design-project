@@ -7,6 +7,7 @@ import {
   EyeOff,
   ShieldCheck,
   User as UserIcon,
+  Phone,
   ArrowRight,
   CheckCircle2,
   AlertCircle,
@@ -365,7 +366,9 @@ function LoginPanel({ onSuccess, goRegister }) {
    Register
 --------------------------------------------------------- */
 function RegisterPanel({ onRegister, goLogin }) {
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [role, setRole] = useState("user");
@@ -379,6 +382,8 @@ function RegisterPanel({ onRegister, goLogin }) {
 
   function validate() {
     const e = {};
+    if (!fullName.trim()) e.fullName = "Full name is required.";
+
     if (!email.trim()) e.email = "Email is required.";
     else if (!validEmail(email)) e.email = "Enter a valid email address.";
 
@@ -400,7 +405,13 @@ function RegisterPanel({ onRegister, goLogin }) {
     }
     setSubmitting(true);
     try {
-      const { user, token } = await registerUser({ email: email.trim(), password, role });
+      const { user, token } = await registerUser({
+        email: email.trim(),
+        password,
+        fullName: fullName.trim(),
+        phone: phone.trim() || undefined,
+        role,
+      });
       setErrors({});
       onRegister(user, token);
     } catch (err) {
@@ -439,6 +450,22 @@ function RegisterPanel({ onRegister, goLogin }) {
           </div>
         </div>
 
+        <Field id="reg-full-name" label="Full name" icon={UserIcon} error={errors.fullName}>
+          <input
+            id="reg-full-name"
+            type="text"
+            maxLength={100}
+            aria-invalid={!!errors.fullName}
+            className="qs-input w-full bg-transparent text-sm py-2"
+            placeholder="Jane Doe"
+            value={fullName}
+            onChange={(e) => {
+              setFullName(e.target.value);
+              setErrors((p) => ({ ...p, fullName: undefined }));
+            }}
+          />
+        </Field>
+
         <Field id="reg-email" label="Email" icon={Mail} error={errors.email}>
           <input
             id="reg-email"
@@ -450,6 +477,22 @@ function RegisterPanel({ onRegister, goLogin }) {
             onChange={(e) => {
               setEmail(e.target.value);
               setErrors((p) => ({ ...p, email: undefined }));
+            }}
+          />
+        </Field>
+
+        <Field id="reg-phone" label="Phone (optional)" icon={Phone} error={errors.phone}>
+          <input
+            id="reg-phone"
+            type="tel"
+            maxLength={30}
+            aria-invalid={!!errors.phone}
+            className="qs-input w-full bg-transparent text-sm py-2"
+            placeholder="555-0100"
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value);
+              setErrors((p) => ({ ...p, phone: undefined }));
             }}
           />
         </Field>

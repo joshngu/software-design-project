@@ -26,8 +26,8 @@ async function request(path, { method = "GET", body, token } = {}) {
   return data;
 }
 
-export function registerUser({ email, password, role }) {
-  return request("/auth/register", { method: "POST", body: { email, password, role } });
+export function registerUser({ email, password, fullName, phone, role }) {
+  return request("/auth/register", { method: "POST", body: { email, password, fullName, phone, role } });
 }
 
 export function loginUser({ email, password }) {

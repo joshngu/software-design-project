@@ -16,7 +16,7 @@ function timeAgo(ts) {
    User Dashboard — overview, active services, notifications
 --------------------------------------------------------- */
 export default function UserDashboardScreen({ user, services, goJoin, goStatus }) {
-  const name = user?.email ? user.email.split("@")[0] : "there";
+  const name = user?.fullName || (user?.email ? user.email.split("@")[0] : "there");
   const { items: notifications } = useNotifications();
 
   return (

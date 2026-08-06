@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 
 import { createApp } from "../../app.js";
-import { resetStore } from "../../data/store.js";
+import { resetTestDb } from "../../data/db.js";
 
 const app = createApp();
 
@@ -12,7 +12,7 @@ async function loginAs(email, password) {
 }
 
 beforeEach(() => {
-  resetStore();
+  resetTestDb();
 });
 
 describe("GET /api/notifications", () => {

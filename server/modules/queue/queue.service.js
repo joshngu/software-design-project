@@ -1,5 +1,6 @@
-import { db } from "../../data/store.js";
+import { getDb } from "../../data/db.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { getServiceById, listServices } from "../services/services.service.js";
 import { notifyCloseToServed, notifyQueueJoined } from "../notifications/notifications.service.js";
 import { recordHistory } from "../history/history.service.js";
 import { validateJoinPayload, validateLeavePayload, validateServiceIdParam } from "./queue.validation.js";
@@ -10,8 +11,15 @@ const PRIORITY_RANK = {
   low: 1,
 };
 
-function getServiceById(serviceId) {
-  return db.services.find((service) => service.id === Number(serviceId));
+function toQueueEntry(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    displayName: row.display_name,
+    serviceId: row.service_id,
+    priority: row.priority,
+    joinedAt: row.joined_at,
+  };
 }
 
 function compareQueueEntries(a, b) {
@@ -23,8 +31,10 @@ function compareQueueEntries(a, b) {
 }
 
 function getOrderedQueueForService(serviceId) {
-  return db.queueEntries
-    .filter((entry) => entry.serviceId === Number(serviceId))
+  return getDb()
+    .prepare("SELECT * FROM queue_entries WHERE service_id = ?")
+    .all(Number(serviceId))
+    .map(toQueueEntry)
     .sort(compareQueueEntries);
 }
 
@@ -75,7 +85,7 @@ export function listQueueForService(serviceId) {
 }
 
 export function listQueueSummary() {
-  return db.services.map((service) => {
+  return listServices().map((service) => {
     const queue = getOrderedQueueForService(service.id);
     return {
       serviceId: service.id,
@@ -93,26 +103,31 @@ export function joinQueue({ user, serviceId, priority, displayName }) {
   }
 
   const service = assertServiceExists(serviceId);
-  const alreadyQueued = db.queueEntries.some(
-    (entry) => entry.userId === user.id && entry.serviceId === Number(serviceId)
-  );
+  const db = getDb();
+  const alreadyQueued = db
+    .prepare("SELECT id FROM queue_entries WHERE user_id = ? AND service_id = ?")
+    .get(user.id, Number(serviceId));
 
   if (alreadyQueued) {
     throw new ApiError(409, "You are already in this queue.");
   }
 
-  const entry = {
-    id: db.nextQueueEntryId++,
-    userId: user.id,
-    displayName: displayName?.trim() || deriveDisplayName(user),
-    serviceId: Number(serviceId),
-    priority: priority || service.priority || "medium",
-    joinedAt: new Date().toISOString(),
-  };
+  const joinedAt = new Date().toISOString();
+  const result = db
+    .prepare(
+      "INSERT INTO queue_entries (user_id, service_id, display_name, priority, joined_at) VALUES (?, ?, ?, ?, ?)"
+    )
+    .run(
+      user.id,
+      Number(serviceId),
+      displayName?.trim() || deriveDisplayName(user),
+      priority || service.priority || "medium",
+      joinedAt
+    );
 
-  db.queueEntries.push(entry);
   const orderedQueue = getOrderedQueueForService(service.id);
-  const position = orderedQueue.findIndex((queuedEntry) => queuedEntry.id === entry.id);
+  const position = orderedQueue.findIndex((queuedEntry) => queuedEntry.id === result.lastInsertRowid);
+  const entry = orderedQueue[position];
 
   notifyQueueJoined(user.id, service.name);
   const estimatedWaitMinutes = getEstimatedWaitMinutes(service, position);
@@ -130,15 +145,18 @@ export function leaveQueue({ userId, serviceId }) {
   }
 
   const service = assertServiceExists(serviceId);
-  const index = db.queueEntries.findIndex(
-    (entry) => entry.userId === userId && entry.serviceId === Number(serviceId)
-  );
+  const db = getDb();
+  const row = db
+    .prepare("SELECT * FROM queue_entries WHERE user_id = ? AND service_id = ?")
+    .get(userId, Number(serviceId));
 
-  if (index < 0) {
+  if (!row) {
     throw new ApiError(404, "Queue entry not found for this user and service.");
   }
 
-  const [entry] = db.queueEntries.splice(index, 1);
+  db.prepare("DELETE FROM queue_entries WHERE id = ?").run(row.id);
+  const entry = toQueueEntry(row);
+
   recordHistory({
     userId: entry.userId,
     serviceId: entry.serviceId,
@@ -171,7 +189,7 @@ export function serveNextUser(serviceId) {
   }
 
   const nextEntry = orderedQueue[0];
-  db.queueEntries = db.queueEntries.filter((entry) => entry.id !== nextEntry.id);
+  getDb().prepare("DELETE FROM queue_entries WHERE id = ?").run(nextEntry.id);
 
   const servedAt = new Date().toISOString();
   recordHistory({
@@ -198,7 +216,7 @@ export function serveNextUser(serviceId) {
 }
 
 export function listQueuesForUser(userId) {
-  const entries = db.queueEntries.filter((entry) => entry.userId === userId);
+  const entries = getDb().prepare("SELECT * FROM queue_entries WHERE user_id = ?").all(userId).map(toQueueEntry);
 
   return entries
     .map((entry) => {

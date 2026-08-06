@@ -5,8 +5,8 @@ import * as authService from "./auth.service.js";
 export const authRouter = Router();
 
 authRouter.post("/register", (req, res) => {
-  const { email, password, role } = req.body ?? {};
-  const result = authService.register({ email, password, role });
+  const { email, password, fullName, phone, role } = req.body ?? {};
+  const result = authService.register({ email, password, fullName, phone, role });
   res.status(201).json(result);
 });
 

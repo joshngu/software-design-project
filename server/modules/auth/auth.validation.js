@@ -3,8 +3,11 @@ const VALID_ROLES = ["user", "admin"];
 const MAX_EMAIL_LENGTH = 254;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 72;
+const MAX_FULL_NAME_LENGTH = 100;
+const MAX_PHONE_LENGTH = 30;
+const PHONE_RE = /^[0-9+()\-.\s]+$/;
 
-export function validateRegistration({ email, password, role }) {
+export function validateRegistration({ email, password, fullName, phone, role }) {
   const errors = {};
 
   if (typeof email !== "string" || !email.trim()) {
@@ -23,6 +26,22 @@ export function validateRegistration({ email, password, role }) {
     errors.password = `Password must not exceed ${MAX_PASSWORD_LENGTH} characters.`;
   } else if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
     errors.password = "Password must contain at least one letter and one number.";
+  }
+
+  if (typeof fullName !== "string" || !fullName.trim()) {
+    errors.fullName = "Full name is required.";
+  } else if (fullName.trim().length > MAX_FULL_NAME_LENGTH) {
+    errors.fullName = `Full name must not exceed ${MAX_FULL_NAME_LENGTH} characters.`;
+  }
+
+  if (phone !== undefined && phone !== null && phone !== "") {
+    if (typeof phone !== "string") {
+      errors.phone = "Phone must be a string.";
+    } else if (phone.trim().length > MAX_PHONE_LENGTH) {
+      errors.phone = `Phone must not exceed ${MAX_PHONE_LENGTH} characters.`;
+    } else if (!PHONE_RE.test(phone.trim())) {
+      errors.phone = "Enter a valid phone number.";
+    }
   }
 
   if (role !== undefined && role !== null && !VALID_ROLES.includes(role)) {

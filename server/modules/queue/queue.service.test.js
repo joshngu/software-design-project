@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { db, resetStore } from "../../data/store.js";
+import { resetTestDb } from "../../data/db.js";
+import { listHistoryForUser } from "../history/history.service.js";
 import {
   joinQueue,
   leaveQueue,
@@ -11,13 +12,7 @@ import {
 } from "./queue.service.js";
 
 beforeEach(() => {
-  resetStore();
-  db.queueEntries = [];
-  db.nextQueueEntryId = 1;
-  db.notifications = [];
-  db.nextNotificationId = 1;
-  db.history = [];
-  db.nextHistoryId = 1;
+  resetTestDb({ seedActivity: false });
 });
 
 describe("joinQueue", () => {
@@ -51,9 +46,10 @@ describe("leaveQueue", () => {
     const left = leaveQueue({ userId: 1, serviceId: 1 });
 
     expect(left.outcome).toBe("left_queue");
-    expect(db.queueEntries).toHaveLength(0);
-    expect(db.history).toHaveLength(1);
-    expect(db.history[0].outcome).toBe("left_queue");
+    expect(listQueuesForUser(1)).toHaveLength(0);
+    const history = listHistoryForUser(1);
+    expect(history).toHaveLength(1);
+    expect(history[0].outcome).toBe("left_queue");
   });
 });
 
@@ -64,9 +60,10 @@ describe("serveNextUser", () => {
 
     const served = serveNextUser(1);
     expect(served.userId).toBe(1);
-    expect(db.queueEntries).toHaveLength(1);
-    expect(db.history).toHaveLength(1);
-    expect(db.history[0].outcome).toBe("served");
+    expect(listQueueForService(1)).toHaveLength(1);
+    const history = listHistoryForUser(1);
+    expect(history).toHaveLength(1);
+    expect(history[0].outcome).toBe("served");
   });
 });
 

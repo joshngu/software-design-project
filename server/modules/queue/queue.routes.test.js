@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 
 import { createApp } from "../../app.js";
-import { db, resetStore } from "../../data/store.js";
+import { resetTestDb } from "../../data/db.js";
 
 const app = createApp();
 
@@ -12,13 +12,7 @@ async function loginAs(email, password) {
 }
 
 beforeEach(() => {
-  resetStore();
-  db.queueEntries = [];
-  db.nextQueueEntryId = 1;
-  db.notifications = [];
-  db.nextNotificationId = 1;
-  db.history = [];
-  db.nextHistoryId = 1;
+  resetTestDb({ seedActivity: false });
 });
 
 describe("POST /api/queue/join", () => {

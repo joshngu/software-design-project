@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { db, resetStore } from "../../data/store.js";
+import { resetTestDb } from "../../data/db.js";
 import { recordHistory, listHistoryForUser } from "./history.service.js";
 
 beforeEach(() => {
-  resetStore();
-  db.history = [];
-  db.nextHistoryId = 1;
+  resetTestDb({ seedActivity: false });
 });
 
 describe("recordHistory", () => {

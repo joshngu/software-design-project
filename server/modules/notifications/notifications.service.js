@@ -1,22 +1,22 @@
-import { db } from "../../data/store.js";
+import { getDb } from "../../data/db.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { validateNotification, validateNotificationId } from "./notifications.validation.js";
 
 /*
  * Notification Module.
  * Backend logic to trigger notifications when a user joins a queue or is
- * close to being served. Per assignment scope, notifications are logged
- * in-memory and returned to the front end (no real email/SMS).
+ * close to being served. Persisted in the `notifications` table (no real
+ * email/SMS delivery — the frontend polls/reads this via the API).
  */
 
-function toPublicNotification(notification) {
+function toPublicNotification(row) {
   return {
-    id: notification.id,
-    userId: notification.userId,
-    type: notification.type,
-    message: notification.message,
-    createdAt: notification.createdAt,
-    read: notification.read,
+    id: row.id,
+    userId: row.user_id,
+    type: row.type,
+    message: row.message,
+    createdAt: row.created_at,
+    read: Boolean(row.read),
   };
 }
 
@@ -26,16 +26,14 @@ export function notify(userId, type, message) {
     throw new ApiError(400, "Validation failed", errors);
   }
 
-  const notification = {
-    id: db.nextNotificationId++,
-    userId,
-    type,
-    message,
-    createdAt: new Date().toISOString(),
-    read: false,
-  };
-  db.notifications.push(notification);
-  return toPublicNotification(notification);
+  const db = getDb();
+  const createdAt = new Date().toISOString();
+  const result = db
+    .prepare("INSERT INTO notifications (user_id, type, message, created_at, read) VALUES (?, ?, ?, ?, 0)")
+    .run(userId, type, message, createdAt);
+
+  const row = db.prepare("SELECT * FROM notifications WHERE id = ?").get(result.lastInsertRowid);
+  return toPublicNotification(row);
 }
 
 /** Called when a user joins a queue for a service. */
@@ -53,9 +51,9 @@ export function notifyCloseToServed(userId, serviceName, estimatedWaitMinutes) {
 }
 
 export function listNotificationsForUser(userId) {
-  return db.notifications
-    .filter((n) => n.userId === userId)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt) || b.id - a.id)
+  return getDb()
+    .prepare("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC, id DESC")
+    .all(userId)
     .map(toPublicNotification);
 }
 
@@ -65,10 +63,12 @@ export function markNotificationRead(notificationId, userId) {
     throw new ApiError(400, "Validation failed", errors);
   }
 
-  const notification = db.notifications.find((n) => n.id === Number(notificationId));
-  if (!notification || notification.userId !== userId) {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM notifications WHERE id = ?").get(Number(notificationId));
+  if (!row || row.user_id !== userId) {
     return null;
   }
-  notification.read = true;
-  return toPublicNotification(notification);
+
+  db.prepare("UPDATE notifications SET read = 1 WHERE id = ?").run(row.id);
+  return toPublicNotification({ ...row, read: 1 });
 }

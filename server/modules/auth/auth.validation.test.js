@@ -4,7 +4,9 @@ import { validateRegistration, validateLogin } from "./auth.validation.js";
 
 describe("validateRegistration", () => {
   it("passes for a valid user registration", () => {
-    expect(validateRegistration({ email: "a@b.com", password: "Passw0rd!", role: "user" })).toEqual({});
+    expect(
+      validateRegistration({ email: "a@b.com", password: "Passw0rd!", fullName: "A B", role: "user" })
+    ).toEqual({});
   });
 
   it("requires an email", () => {
@@ -49,8 +51,47 @@ describe("validateRegistration", () => {
   });
 
   it("allows an omitted role", () => {
-    const errors = validateRegistration({ email: "a@b.com", password: "Passw0rd!" });
+    const errors = validateRegistration({ email: "a@b.com", password: "Passw0rd!", fullName: "A B" });
     expect(errors.role).toBeUndefined();
+  });
+
+  it("requires a full name", () => {
+    const errors = validateRegistration({ email: "a@b.com", password: "Passw0rd!", fullName: "  " });
+    expect(errors.fullName).toMatch(/required/i);
+  });
+
+  it("rejects a full name over 100 characters", () => {
+    const errors = validateRegistration({
+      email: "a@b.com",
+      password: "Passw0rd!",
+      fullName: "a".repeat(101),
+    });
+    expect(errors.fullName).toMatch(/exceed 100/i);
+  });
+
+  it("allows an omitted phone", () => {
+    const errors = validateRegistration({ email: "a@b.com", password: "Passw0rd!", fullName: "A B" });
+    expect(errors.phone).toBeUndefined();
+  });
+
+  it("accepts a valid phone number", () => {
+    const errors = validateRegistration({
+      email: "a@b.com",
+      password: "Passw0rd!",
+      fullName: "A B",
+      phone: "+1 (555) 123-4567",
+    });
+    expect(errors.phone).toBeUndefined();
+  });
+
+  it("rejects a phone number with invalid characters", () => {
+    const errors = validateRegistration({
+      email: "a@b.com",
+      password: "Passw0rd!",
+      fullName: "A B",
+      phone: "call-me-maybe",
+    });
+    expect(errors.phone).toMatch(/valid phone/i);
   });
 });
 

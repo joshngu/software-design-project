@@ -1,9 +1,13 @@
-import { db } from "../../data/store.js";
+import { getDb } from "../../data/db.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { validateService } from "./services.validation.js";
 
 export function listServices() {
-  return db.services;
+  return getDb().prepare("SELECT id, name, description, duration, priority FROM services ORDER BY id").all();
+}
+
+export function getServiceById(id) {
+  return getDb().prepare("SELECT id, name, description, duration, priority FROM services WHERE id = ?").get(Number(id));
 }
 
 export function createService({ name, description, duration, priority }) {
@@ -12,20 +16,18 @@ export function createService({ name, description, duration, priority }) {
     throw new ApiError(400, "Validation failed", errors);
   }
 
-  const service = {
-    id: db.nextServiceId++,
-    name: name.trim(),
-    description: description.trim(),
-    duration: Number(duration),
-    priority,
-  };
-  db.services.push(service);
-  return service;
+  const db = getDb();
+  const result = db
+    .prepare("INSERT INTO services (name, description, duration, priority) VALUES (?, ?, ?, ?)")
+    .run(name.trim(), description.trim(), Number(duration), priority);
+
+  return getServiceById(result.lastInsertRowid);
 }
 
 export function updateService(id, { name, description, duration, priority }) {
-  const service = db.services.find((s) => s.id === Number(id));
-  if (!service) {
+  const db = getDb();
+  const existing = getServiceById(id);
+  if (!existing) {
     throw new ApiError(404, "Service not found.");
   }
 
@@ -34,9 +36,13 @@ export function updateService(id, { name, description, duration, priority }) {
     throw new ApiError(400, "Validation failed", errors);
   }
 
-  service.name = name.trim();
-  service.description = description.trim();
-  service.duration = Number(duration);
-  service.priority = priority;
-  return service;
+  db.prepare("UPDATE services SET name = ?, description = ?, duration = ?, priority = ? WHERE id = ?").run(
+    name.trim(),
+    description.trim(),
+    Number(duration),
+    priority,
+    Number(id)
+  );
+
+  return getServiceById(id);
 }
