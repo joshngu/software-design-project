@@ -35,14 +35,27 @@ const SCHEMA = `
     priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high'))
   );
 
+  CREATE TABLE IF NOT EXISTS queues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_id INTEGER NOT NULL UNIQUE REFERENCES services(id) ON DELETE CASCADE,
+    status TEXT NOT NULL CHECK (status IN ('open', 'closed')) DEFAULT 'open',
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS queue_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue_id INTEGER NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
     user_id INTEGER NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
-    service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK (position > 0),
+    join_time TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('waiting', 'served', 'canceled')),
     display_name TEXT NOT NULL,
-    priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high')),
-    joined_at TEXT NOT NULL
+    priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high'))
   );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_entries_unique_waiting_user
+  ON queue_entries(queue_id, user_id)
+  WHERE status = 'waiting';
 
   CREATE TABLE IF NOT EXISTS history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,9 +76,58 @@ const SCHEMA = `
   );
 `;
 
+function migrateLegacyQueueSchema(instance) {
+  const queueEntryCols = instance.prepare("PRAGMA table_info(queue_entries)").all();
+  const hasQueueId = queueEntryCols.some((col) => col.name === "queue_id");
+  if (hasQueueId || queueEntryCols.length === 0) return;
+
+  instance.exec("ALTER TABLE queue_entries RENAME TO queue_entries_legacy");
+  instance.exec(`
+    CREATE TABLE queue_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      queue_id INTEGER NOT NULL REFERENCES queues(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL CHECK (position > 0),
+      join_time TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('waiting', 'served', 'canceled')),
+      display_name TEXT NOT NULL,
+      priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_entries_unique_waiting_user
+    ON queue_entries(queue_id, user_id)
+    WHERE status = 'waiting';
+  `);
+
+  const selectLegacyEntries = instance.prepare(`
+    SELECT id, user_id, service_id, display_name, priority, joined_at
+    FROM queue_entries_legacy
+    ORDER BY service_id ASC, datetime(joined_at) ASC, id ASC
+  `);
+  const selectQueueByService = instance.prepare("SELECT id FROM queues WHERE service_id = ?");
+  const insertQueue = instance.prepare("INSERT INTO queues (service_id, status, created_at) VALUES (?, 'open', ?)");
+  const countWaiting = instance.prepare("SELECT COUNT(*) AS count FROM queue_entries WHERE queue_id = ? AND status = 'waiting'");
+  const insertEntry = instance.prepare(`
+    INSERT INTO queue_entries (queue_id, user_id, position, join_time, status, display_name, priority)
+    VALUES (?, ?, ?, ?, 'waiting', ?, ?)
+  `);
+
+  for (const legacy of selectLegacyEntries.all()) {
+    let queue = selectQueueByService.get(legacy.service_id);
+    if (!queue) {
+      const queueResult = insertQueue.run(legacy.service_id, legacy.joined_at);
+      queue = { id: Number(queueResult.lastInsertRowid) };
+    }
+    const nextPosition = Number(countWaiting.get(queue.id).count) + 1;
+    insertEntry.run(queue.id, legacy.user_id, nextPosition, legacy.joined_at, legacy.display_name, legacy.priority);
+  }
+
+  instance.exec("DROP TABLE queue_entries_legacy");
+}
+
 function applySchema(instance) {
   instance.pragma("foreign_keys = ON");
   instance.exec(SCHEMA);
+  migrateLegacyQueueSchema(instance);
 }
 
 function isoMinutesAgo(minutes) {
@@ -102,9 +164,17 @@ function seedCore(instance) {
 
 /** Seeds sample activity (queue entry, notifications, history) for the demo "jane" user. */
 function seedActivity(instance) {
+  const queueCreatedAt = isoMinutesAgo(20);
+  const queue = instance
+    .prepare("INSERT INTO queues (service_id, status, created_at) VALUES (?, 'open', ?)")
+    .run(1, queueCreatedAt);
   instance
-    .prepare("INSERT INTO queue_entries (user_id, service_id, display_name, priority, joined_at) VALUES (?, ?, ?, ?, ?)")
-    .run(1, 1, "Jane", "medium", isoMinutesAgo(12));
+    .prepare(
+      `INSERT INTO queue_entries (
+        queue_id, user_id, position, join_time, status, display_name, priority
+      ) VALUES (?, ?, ?, ?, 'waiting', ?, ?)`
+    )
+    .run(queue.lastInsertRowid, 1, 1, isoMinutesAgo(12), "Jane", "medium");
 
   const insertNotification = instance.prepare(
     "INSERT INTO notifications (user_id, type, message, created_at, read) VALUES (?, ?, ?, ?, ?)"

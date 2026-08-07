@@ -5,55 +5,125 @@ import { notifyCloseToServed, notifyQueueJoined } from "../notifications/notific
 import { recordHistory } from "../history/history.service.js";
 import { validateJoinPayload, validateLeavePayload, validateServiceIdParam } from "./queue.validation.js";
 
-const PRIORITY_RANK = {
-  high: 3,
-  medium: 2,
-  low: 1,
-};
+const PRIORITY_ORDER_SQL = `
+  CASE qe.priority
+    WHEN 'high' THEN 3
+    WHEN 'medium' THEN 2
+    ELSE 1
+  END DESC,
+  datetime(qe.join_time) ASC,
+  qe.id ASC
+`;
 
-function toQueueEntry(row) {
+function getQueueByServiceId(serviceId) {
+  return getDb()
+    .prepare(
+      `SELECT id, service_id AS serviceId, status, created_at AS createdDate
+       FROM queues
+       WHERE service_id = ?`
+    )
+    .get(Number(serviceId));
+}
+
+function getOrCreateQueueForService(serviceId) {
+  const existing = getQueueByServiceId(serviceId);
+  if (existing) return existing;
+
+  const createdDate = new Date().toISOString();
+  const insertResult = getDb()
+    .prepare(
+      `INSERT INTO queues (service_id, status, created_at)
+       VALUES (?, 'open', ?)`
+    )
+    .run(Number(serviceId), createdDate);
+
   return {
-    id: row.id,
-    userId: row.user_id,
-    displayName: row.display_name,
-    serviceId: row.service_id,
-    priority: row.priority,
-    joinedAt: row.joined_at,
+    id: Number(insertResult.lastInsertRowid),
+    serviceId: Number(serviceId),
+    status: "open",
+    createdDate,
   };
 }
 
-function compareQueueEntries(a, b) {
-  const priorityDelta = (PRIORITY_RANK[b.priority] || 0) - (PRIORITY_RANK[a.priority] || 0);
-  if (priorityDelta !== 0) return priorityDelta;
-  const joinedDelta = new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
-  if (joinedDelta !== 0) return joinedDelta;
-  return a.id - b.id;
+function listWaitingEntriesForQueue(queueId) {
+  return getDb()
+    .prepare(
+      `SELECT
+         qe.id,
+         qe.queue_id AS queueId,
+         qe.user_id AS userId,
+         qe.position,
+         qe.join_time AS joinTime,
+         qe.status,
+         qe.priority,
+         qe.display_name AS displayName
+       FROM queue_entries qe
+       WHERE qe.queue_id = ? AND qe.status = 'waiting'
+       ORDER BY qe.position ASC, qe.id ASC`
+    )
+    .all(queueId);
 }
 
-function getOrderedQueueForService(serviceId) {
+const reindexWaitingEntries = (queueId) => {
+  const db = getDb();
+  const updateQueueEntryPosition = db.prepare(
+    `UPDATE queue_entries
+     SET position = ?
+     WHERE id = ?`
+  );
+  const waitingEntries = db
+    .prepare(
+      `SELECT qe.id
+       FROM queue_entries qe
+       WHERE qe.queue_id = ? AND qe.status = 'waiting'
+       ORDER BY ${PRIORITY_ORDER_SQL}`
+    )
+    .all(queueId);
+
+  waitingEntries.forEach((entry, index) => {
+    updateQueueEntryPosition.run(index + 1, entry.id);
+  });
+};
+
+function readQueueEntryById(entryId) {
   return getDb()
-    .prepare("SELECT * FROM queue_entries WHERE service_id = ?")
-    .all(Number(serviceId))
-    .map(toQueueEntry)
-    .sort(compareQueueEntries);
+    .prepare(
+      `SELECT
+         qe.id,
+         qe.queue_id AS queueId,
+         qe.user_id AS userId,
+         qe.position,
+         qe.join_time AS joinTime,
+         qe.status,
+         qe.priority,
+         qe.display_name AS displayName
+       FROM queue_entries qe
+       WHERE qe.id = ?`
+    )
+    .get(entryId);
 }
 
 function getEstimatedWaitMinutes(service, entriesAheadCount) {
   return entriesAheadCount * Number(service.duration);
 }
 
-function toPublicQueueEntry(entry, service, index) {
+function toPublicQueueEntry(entry, service, queue) {
   return {
     id: entry.id,
     userId: entry.userId,
     displayName: entry.displayName,
+    queueId: queue.id,
+    queueStatus: queue.status,
+    queueCreatedDate: queue.createdDate,
     serviceId: entry.serviceId,
     serviceName: service.name,
+    status: entry.status,
     priority: entry.priority,
-    joinedAt: entry.joinedAt,
-    position: index + 1,
+    joinTime: entry.joinTime,
+    joinedAt: entry.joinTime, // Backward-compatible frontend field.
+    position: entry.position,
     expectedDuration: Number(service.duration),
-    estimatedWaitMinutes: getEstimatedWaitMinutes(service, index),
+    estimatedWaitMinutes: getEstimatedWaitMinutes(service, entry.position - 1),
   };
 }
 
@@ -79,19 +149,35 @@ export function listQueueForService(serviceId) {
   }
 
   const service = assertServiceExists(serviceId);
-  const orderedQueue = getOrderedQueueForService(service.id);
+  const queue = getOrCreateQueueForService(service.id);
+  reindexWaitingEntries(queue.id);
+  const waitingEntries = listWaitingEntriesForQueue(queue.id).map((entry) => ({
+    ...entry,
+    serviceId: queue.serviceId,
+  }));
 
-  return orderedQueue.map((entry, index) => toPublicQueueEntry(entry, service, index));
+  return waitingEntries.map((entry) => toPublicQueueEntry(entry, service, queue));
 }
 
 export function listQueueSummary() {
   return listServices().map((service) => {
-    const queue = getOrderedQueueForService(service.id);
+    const queue = getOrCreateQueueForService(service.id);
+    const waitingCountResult = getDb()
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM queue_entries
+         WHERE queue_id = ? AND status = 'waiting'`
+      )
+      .get(queue.id);
+    const queueLength = Number(waitingCountResult.count);
     return {
+      queueId: queue.id,
       serviceId: service.id,
       serviceName: service.name,
-      queueLength: queue.length,
-      estimatedWaitForNewJoinMinutes: getEstimatedWaitMinutes(service, queue.length),
+      status: queue.status,
+      createdDate: queue.createdDate,
+      queueLength,
+      estimatedWaitForNewJoinMinutes: getEstimatedWaitMinutes(service, queueLength),
     };
   });
 }
@@ -103,39 +189,60 @@ export function joinQueue({ user, serviceId, priority, displayName }) {
   }
 
   const service = assertServiceExists(serviceId);
-  const db = getDb();
-  const alreadyQueued = db
-    .prepare("SELECT id FROM queue_entries WHERE user_id = ? AND service_id = ?")
-    .get(user.id, Number(serviceId));
+  const queue = getOrCreateQueueForService(service.id);
+  if (queue.status !== "open") {
+    throw new ApiError(409, "Queue is currently closed.");
+  }
+
+  const alreadyQueued = getDb()
+    .prepare(
+      `SELECT id
+       FROM queue_entries
+       WHERE queue_id = ? AND user_id = ? AND status = 'waiting'`
+    )
+    .get(queue.id, user.id);
 
   if (alreadyQueued) {
     throw new ApiError(409, "You are already in this queue.");
   }
 
-  const joinedAt = new Date().toISOString();
-  const result = db
+  const queueLengthResult = getDb()
     .prepare(
-      "INSERT INTO queue_entries (user_id, service_id, display_name, priority, joined_at) VALUES (?, ?, ?, ?, ?)"
+      `SELECT COUNT(*) AS count
+       FROM queue_entries
+       WHERE queue_id = ? AND status = 'waiting'`
+    )
+    .get(queue.id);
+  const nextPosition = Number(queueLengthResult.count) + 1;
+  const joinTime = new Date().toISOString();
+  const insertResult = getDb()
+    .prepare(
+      `INSERT INTO queue_entries (
+         queue_id, user_id, position, join_time, status, priority, display_name
+       ) VALUES (?, ?, ?, ?, 'waiting', ?, ?)`
     )
     .run(
+      queue.id,
       user.id,
-      Number(serviceId),
-      displayName?.trim() || deriveDisplayName(user),
+      nextPosition,
+      joinTime,
       priority || service.priority || "medium",
-      joinedAt
+      displayName?.trim() || deriveDisplayName(user)
     );
 
-  const orderedQueue = getOrderedQueueForService(service.id);
-  const position = orderedQueue.findIndex((queuedEntry) => queuedEntry.id === result.lastInsertRowid);
-  const entry = orderedQueue[position];
-
+  const entryId = Number(insertResult.lastInsertRowid);
+  reindexWaitingEntries(queue.id);
+  const entry = {
+    ...readQueueEntryById(entryId),
+    serviceId: queue.serviceId,
+  };
   notifyQueueJoined(user.id, service.name);
-  const estimatedWaitMinutes = getEstimatedWaitMinutes(service, position);
+  const estimatedWaitMinutes = getEstimatedWaitMinutes(service, entry.position - 1);
   if (estimatedWaitMinutes <= Number(service.duration)) {
     notifyCloseToServed(user.id, service.name, estimatedWaitMinutes);
   }
 
-  return toPublicQueueEntry(entry, service, position);
+  return toPublicQueueEntry(entry, service, queue);
 }
 
 export function leaveQueue({ userId, serviceId }) {
@@ -145,33 +252,56 @@ export function leaveQueue({ userId, serviceId }) {
   }
 
   const service = assertServiceExists(serviceId);
-  const db = getDb();
-  const row = db
-    .prepare("SELECT * FROM queue_entries WHERE user_id = ? AND service_id = ?")
-    .get(userId, Number(serviceId));
+  const queue = getQueueByServiceId(service.id);
+  if (!queue) {
+    throw new ApiError(404, "Queue entry not found for this user and service.");
+  }
+  const entry = getDb()
+    .prepare(
+      `SELECT
+         qe.id,
+         qe.queue_id AS queueId,
+         qe.user_id AS userId,
+         qe.position,
+         qe.join_time AS joinTime,
+         qe.priority,
+         qe.display_name AS displayName
+       FROM queue_entries qe
+       WHERE qe.queue_id = ? AND qe.user_id = ? AND qe.status = 'waiting'`
+    )
+    .get(queue.id, userId);
 
-  if (!row) {
+  if (!entry) {
     throw new ApiError(404, "Queue entry not found for this user and service.");
   }
 
-  db.prepare("DELETE FROM queue_entries WHERE id = ?").run(row.id);
-  const entry = toQueueEntry(row);
+  getDb()
+    .prepare(
+      `UPDATE queue_entries
+       SET status = 'canceled'
+       WHERE id = ?`
+    )
+    .run(entry.id);
+  reindexWaitingEntries(queue.id);
 
   recordHistory({
     userId: entry.userId,
-    serviceId: entry.serviceId,
-    joinedAt: entry.joinedAt,
+    serviceId: service.id,
+    joinedAt: entry.joinTime,
     servedAt: null,
     outcome: "left_queue",
   });
 
   return {
     id: entry.id,
+    queueId: queue.id,
     userId: entry.userId,
-    serviceId: entry.serviceId,
+    serviceId: service.id,
     serviceName: service.name,
     priority: entry.priority,
-    joinedAt: entry.joinedAt,
+    joinTime: entry.joinTime,
+    joinedAt: entry.joinTime,
+    status: "canceled",
     outcome: "left_queue",
   };
 }
@@ -183,49 +313,112 @@ export function serveNextUser(serviceId) {
   }
 
   const service = assertServiceExists(serviceId);
-  const orderedQueue = getOrderedQueueForService(service.id);
-  if (orderedQueue.length === 0) {
+  const queue = getQueueByServiceId(service.id);
+  if (!queue) {
     throw new ApiError(404, "No users are currently waiting in this queue.");
   }
 
-  const nextEntry = orderedQueue[0];
-  getDb().prepare("DELETE FROM queue_entries WHERE id = ?").run(nextEntry.id);
+  reindexWaitingEntries(queue.id);
+  const nextEntry = getDb()
+    .prepare(
+      `SELECT
+         qe.id,
+         qe.user_id AS userId,
+         qe.join_time AS joinTime,
+         qe.priority,
+         qe.display_name AS displayName
+       FROM queue_entries qe
+       WHERE qe.queue_id = ? AND qe.status = 'waiting'
+       ORDER BY qe.position ASC, qe.id ASC
+       LIMIT 1`
+    )
+    .get(queue.id);
+
+  if (!nextEntry) {
+    throw new ApiError(404, "No users are currently waiting in this queue.");
+  }
 
   const servedAt = new Date().toISOString();
+  getDb()
+    .prepare(
+      `UPDATE queue_entries
+       SET status = 'served'
+       WHERE id = ?`
+    )
+    .run(nextEntry.id);
+  reindexWaitingEntries(queue.id);
+
   recordHistory({
     userId: nextEntry.userId,
-    serviceId: nextEntry.serviceId,
-    joinedAt: nextEntry.joinedAt,
+    serviceId: service.id,
+    joinedAt: nextEntry.joinTime,
     servedAt,
     outcome: "served",
   });
 
-  const remainingQueue = getOrderedQueueForService(service.id);
-  if (remainingQueue.length > 0) {
-    notifyCloseToServed(remainingQueue[0].userId, service.name, 0);
+  const remainingNextEntry = getDb()
+    .prepare(
+      `SELECT
+         qe.user_id AS userId
+       FROM queue_entries qe
+       WHERE qe.queue_id = ? AND qe.status = 'waiting'
+       ORDER BY qe.position ASC, qe.id ASC
+       LIMIT 1`
+    )
+    .get(queue.id);
+  if (remainingNextEntry) {
+    notifyCloseToServed(remainingNextEntry.userId, service.name, 0);
   }
 
   return {
     id: nextEntry.id,
+    queueId: queue.id,
     userId: nextEntry.userId,
     displayName: nextEntry.displayName,
-    serviceId: nextEntry.serviceId,
+    serviceId: service.id,
     serviceName: service.name,
+    joinTime: nextEntry.joinTime,
     servedAt,
+    status: "served",
   };
 }
 
 export function listQueuesForUser(userId) {
-  const entries = getDb().prepare("SELECT * FROM queue_entries WHERE user_id = ?").all(userId).map(toQueueEntry);
+  const waitingRows = getDb()
+    .prepare(
+      `SELECT
+         qe.id,
+         qe.queue_id AS queueId,
+         qe.user_id AS userId,
+         qe.position,
+         qe.join_time AS joinTime,
+         qe.status,
+         qe.priority,
+         qe.display_name AS displayName,
+         q.service_id AS serviceId,
+         q.status AS queueStatus,
+         q.created_at AS queueCreatedDate
+       FROM queue_entries qe
+       JOIN queues q ON q.id = qe.queue_id
+       WHERE qe.user_id = ? AND qe.status = 'waiting'
+       ORDER BY qe.position ASC, qe.id ASC`
+    )
+    .all(userId);
 
-  return entries
+  return waitingRows
     .map((entry) => {
       const service = getServiceById(entry.serviceId);
       if (!service) return null;
-      const queue = getOrderedQueueForService(service.id);
-      const index = queue.findIndex((queuedEntry) => queuedEntry.id === entry.id);
-      if (index < 0) return null;
-      return toPublicQueueEntry(entry, service, index);
+      return toPublicQueueEntry(
+        entry,
+        service,
+        {
+          id: entry.queueId,
+          serviceId: entry.serviceId,
+          status: entry.queueStatus,
+          createdDate: entry.queueCreatedDate,
+        }
+      );
     })
     .filter(Boolean)
     .sort((a, b) => a.estimatedWaitMinutes - b.estimatedWaitMinutes || a.id - b.id);
