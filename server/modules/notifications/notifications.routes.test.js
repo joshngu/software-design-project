@@ -50,7 +50,7 @@ describe("POST /api/notifications/:id/read", () => {
     const res = await request(app).post("/api/notifications/2/read").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.notification.read).toBe(true);
+    expect(res.body.notification.status).toBe("viewed");
   });
 
   it("returns 404 when marking another user's notification", async () => {

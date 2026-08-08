@@ -18,7 +18,7 @@ describe("notify", () => {
     const notification = notify(1, "queue_joined", "You joined the queue.");
     expect(notification.id).toBeDefined();
     expect(notification.userId).toBe(1);
-    expect(notification.read).toBe(false);
+    expect(notification.status).toBe("sent");
   });
 
   it("rejects an unknown notification type", () => {
@@ -60,7 +60,7 @@ describe("markNotificationRead", () => {
   it("marks a notification as read for its owner", () => {
     const notification = notify(1, "queue_joined", "msg");
     const updated = markNotificationRead(notification.id, 1);
-    expect(updated.read).toBe(true);
+    expect(updated.status).toBe("viewed");
   });
 
   it("returns null when the notification belongs to a different user", () => {

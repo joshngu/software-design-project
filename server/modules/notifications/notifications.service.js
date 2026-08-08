@@ -16,7 +16,7 @@ function toPublicNotification(row) {
     type: row.type,
     message: row.message,
     createdAt: row.created_at,
-    read: Boolean(row.read),
+     status: row.status,
   };
 }
 
@@ -29,7 +29,7 @@ export function notify(userId, type, message) {
   const db = getDb();
   const createdAt = new Date().toISOString();
   const result = db
-    .prepare("INSERT INTO notifications (user_id, type, message, created_at, read) VALUES (?, ?, ?, ?, 0)")
+    .prepare("INSERT INTO notifications (user_id, type, message, created_at, status) VALUES (?, ?, ?, ?,'sent' )")
     .run(userId, type, message, createdAt);
 
   const row = db.prepare("SELECT * FROM notifications WHERE id = ?").get(result.lastInsertRowid);
@@ -69,6 +69,6 @@ export function markNotificationRead(notificationId, userId) {
     return null;
   }
 
-  db.prepare("UPDATE notifications SET read = 1 WHERE id = ?").run(row.id);
-  return toPublicNotification({ ...row, read: 1 });
+  db.prepare("UPDATE notifications SET status = 'viewed' WHERE id = ?").run(row.id);
+  return toPublicNotification({ ...row, status:"viewed"});
 }

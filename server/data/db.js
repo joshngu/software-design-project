@@ -67,13 +67,13 @@ const SCHEMA = `
   );
 
   CREATE TABLE IF NOT EXISTS notifications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('queue_joined', 'close_to_served')),
-    message TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    read INTEGER NOT NULL DEFAULT 0
-  );
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('queue_joined', 'close_to_served')),
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('sent', 'viewed')) DEFAULT 'sent'
+);
 `;
 
 function migrateLegacyQueueSchema(instance) {
@@ -177,15 +177,15 @@ function seedActivity(instance) {
     .run(queue.lastInsertRowid, 1, 1, isoMinutesAgo(12), "Jane", "medium");
 
   const insertNotification = instance.prepare(
-    "INSERT INTO notifications (user_id, type, message, created_at, read) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO notifications (user_id, type, message, created_at, status) VALUES (?, ?, ?, ?, ?)"
   );
-  insertNotification.run(1, "queue_joined", "You joined the queue for General Checkup.", isoMinutesAgo(60), 1);
+  insertNotification.run(1, "queue_joined", "You joined the queue for General Checkup.", isoMinutesAgo(60), "viewed");
   insertNotification.run(
     1,
     "close_to_served",
     "You are almost up for General Checkup. Estimated wait: 10 minutes.",
     isoMinutesAgo(5),
-    0
+    "sent"
   );
 
   const insertHistory = instance.prepare(
