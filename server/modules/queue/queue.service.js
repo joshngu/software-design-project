@@ -2,8 +2,8 @@ import { getDb } from "../../data/db.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { getServiceById, listServices } from "../services/services.service.js";
 import { notifyCloseToServed, notifyQueueJoined } from "../notifications/notifications.service.js";
-import { recordHistory } from "../history/history.service.js";
 import { validateJoinPayload, validateLeavePayload, validateServiceIdParam } from "./queue.validation.js";
+import { recordHistory, getAverageServiceDurationMinutes } from "../history/history.service.js";
 
 const PRIORITY_ORDER_SQL = `
   CASE qe.priority
@@ -103,8 +103,28 @@ function readQueueEntryById(entryId) {
     .get(entryId);
 }
 
-function getEstimatedWaitMinutes(service, entriesAheadCount) {
+const MIN_HISTORY_SAMPLES_FOR_SMART_ESTIMATE = 3;
+
+/** Static fallback: position in line × the service's fixed expected duration. */
+function getStaticEstimatedWaitMinutes(service, entriesAheadCount) {
   return entriesAheadCount * Number(service.duration);
+}
+
+/**
+ * Smart Feature: Adaptive Wait-Time Estimation.
+ * Uses the real average time-to-serve for this service once enough data exists. Falls back
+ * to the static estimate until there's enough history to trust.
+ */
+function getEstimatedWaitMinutes(service, entriesAheadCount) {
+  const historicalAverage = getAverageServiceDurationMinutes(service.id, {
+    minSamples: MIN_HISTORY_SAMPLES_FOR_SMART_ESTIMATE,
+  });
+
+  if (historicalAverage === null) {
+    return getStaticEstimatedWaitMinutes(service, entriesAheadCount);
+  }
+
+  return Math.round(entriesAheadCount * historicalAverage);
 }
 
 function toPublicQueueEntry(entry, service, queue) {
@@ -124,6 +144,10 @@ function toPublicQueueEntry(entry, service, queue) {
     position: entry.position,
     expectedDuration: Number(service.duration),
     estimatedWaitMinutes: getEstimatedWaitMinutes(service, entry.position - 1),
+    usingHistoricalEstimate:
+    getAverageServiceDurationMinutes(service.id, {
+      minSamples: MIN_HISTORY_SAMPLES_FOR_SMART_ESTIMATE,
+      }) !== null,
   };
 }
 
