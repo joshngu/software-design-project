@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { resetTestDb } from "../../data/db.js";
-import { listHistoryForUser } from "../history/history.service.js";
+import { listHistoryForUser, recordHistory } from "../history/history.service.js";
 import {
   joinQueue,
   leaveQueue,
@@ -85,5 +85,104 @@ describe("listQueueSummary / listQueuesForUser", () => {
     expect(queues).toHaveLength(1);
     expect(queues[0].serviceId).toBe(1);
     expect(queues[0].position).toBe(2);
+  });
+});
+
+describe("adaptive wait-time estimation (smart feature)", () => {
+  it("switches from the static duration to a historical average once enough data exists", () => {
+    // Seed 3 completed ("served") history entries for General Checkup (service 1,
+    // static duration 30 min), each taking exactly 10 real minutes to serve.
+    // This crosses the minSamples threshold, so the estimate should now use
+    // the real 10-minute average instead of the static 30-minute duration.
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T00:00:00.000Z",
+      servedAt: "2026-01-01T00:10:00.000Z",
+      outcome: "served",
+    });
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T01:00:00.000Z",
+      servedAt: "2026-01-01T01:10:00.000Z",
+      outcome: "served",
+    });
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T02:00:00.000Z",
+      servedAt: "2026-01-01T02:10:00.000Z",
+      outcome: "served",
+    });
+
+    const first = joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 1 });
+    const second = joinQueue({ user: { id: 2, email: "sam@example.com" }, serviceId: 1 });
+
+    // Without history, second.estimatedWaitMinutes would be 30 (1 person ahead x
+    // the static 30-min duration). With 3 served entries averaging 10 minutes
+    // each, it should now be 10 instead.
+    expect(second.estimatedWaitMinutes).toBe(10);
+    expect(first.usingHistoricalEstimate).toBe(true);
+    expect(second.usingHistoricalEstimate).toBe(true);
+  });
+
+  it("falls back to the static duration when there is not enough history yet", () => {
+    // Only 2 served entries -- below the minSamples threshold of 3 -- so the
+    // estimate should still use the static 30-minute duration.
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T00:00:00.000Z",
+      servedAt: "2026-01-01T00:10:00.000Z",
+      outcome: "served",
+    });
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T01:00:00.000Z",
+      servedAt: "2026-01-01T01:10:00.000Z",
+      outcome: "served",
+    });
+
+    const first = joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 1 });
+    const second = joinQueue({ user: { id: 2, email: "sam@example.com" }, serviceId: 1 });
+
+    expect(second.estimatedWaitMinutes).toBe(30);
+    expect(first.usingHistoricalEstimate).toBe(false);
+    expect(second.usingHistoricalEstimate).toBe(false);
+  });
+
+  it("reflects the historical average in the queue summary for new joiners", () => {
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T00:00:00.000Z",
+      servedAt: "2026-01-01T00:10:00.000Z",
+      outcome: "served",
+    });
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T01:00:00.000Z",
+      servedAt: "2026-01-01T01:10:00.000Z",
+      outcome: "served",
+    });
+    recordHistory({
+      userId: 1,
+      serviceId: 1,
+      joinedAt: "2026-01-01T02:00:00.000Z",
+      servedAt: "2026-01-01T02:10:00.000Z",
+      outcome: "served",
+    });
+
+    joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 1 });
+    joinQueue({ user: { id: 2, email: "sam@example.com" }, serviceId: 1 });
+
+    const summary = listQueueSummary();
+    const generalCheckup = summary.find((item) => item.serviceId === 1);
+
+    // 2 people waiting x the 10-minute historical average = 20, not 60.
+    expect(generalCheckup.estimatedWaitForNewJoinMinutes).toBe(20);
   });
 });
