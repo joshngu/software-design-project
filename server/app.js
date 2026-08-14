@@ -8,6 +8,8 @@ import { notificationsRouter } from "./modules/notifications/notifications.route
 import { historyRouter } from "./modules/history/history.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
+import { reportingRouter } from "./modules/reporting/reporting.routes.js";
+
 export function createApp() {
   const app = express();
 
@@ -21,6 +23,8 @@ export function createApp() {
   app.use("/api/history", historyRouter);
 
   app.use(errorHandler);
+  
+  app.use("/api/reports", reportingRouter);
 
   return app;
 }
