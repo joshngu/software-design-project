@@ -7,6 +7,11 @@ class ApiRequestError extends Error {
   }
 }
 
+function toQueryString(params = {}) {
+  const usable = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "");
+  return usable.length ? `?${new URLSearchParams(usable).toString()}` : "";
+}
+
 async function request(path, { method = "GET", body, token } = {}) {
   const res = await fetch(`/api${path}`, {
     method,
@@ -91,6 +96,44 @@ export function serveNextUser(token, serviceId) {
     method: "POST",
     token,
   });
+}
+
+export function fetchUserParticipationReport(token, filters = {}) {
+  return request(`/reports/users${toQueryString(filters)}`, { token });
+}
+
+export function fetchServiceActivityReport(token, filters = {}) {
+  return request(`/reports/services${toQueryString(filters)}`, { token });
+}
+
+export function fetchQueueUsageStats(token, filters = {}) {
+  return request(`/reports/stats${toQueryString(filters)}`, { token });
+}
+
+/** Downloads a CSV report export and triggers a browser save-as. */
+export async function downloadReportCsv(token, type, filters = {}) {
+  const res = await fetch(`/api/reports/export${toQueryString({ ...filters, type })}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiRequestError(data.message || "Export failed.", data.errors);
+  }
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : `${type}-report.csv`;
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 export { ApiRequestError };

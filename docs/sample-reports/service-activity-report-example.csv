@@ -1,0 +1,4 @@
+serviceId,name,description,duration,priority,queueStatus,currentQueueLength,totalVisits,servedCount,leftQueueCount,noShowCount,averageWaitMinutes
+1,General Checkup,Routine physical exam and health assessment.,30,medium,open,1,2,1,1,0,
+2,Vaccination,Scheduled immunizations and booster shots.,15,high,open,0,1,1,0,0,
+3,Lab Work,Blood draw and diagnostic testing.,20,low,open,0,1,1,0,0,

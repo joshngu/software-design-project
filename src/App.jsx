@@ -7,6 +7,10 @@ import {
   fetchQueueSummary,
   fetchQueueForService,
   serveNextUser as apiServeNextUser,
+  fetchUserParticipationReport,
+  fetchServiceActivityReport,
+  fetchQueueUsageStats,
+  downloadReportCsv,
 } from "./api";
 
 const blankForm = {
@@ -14,6 +18,12 @@ const blankForm = {
   description: "",
   duration: "",
   priority: "medium",
+};
+
+const blankReportFilters = {
+  startDate: "",
+  endDate: "",
+  serviceId: "",
 };
 
 export default function App({ userEmail, token, onLogout }) {
@@ -32,6 +42,15 @@ export default function App({ userEmail, token, onLogout }) {
   const [editingServiceId, setEditingServiceId] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+
+  const [reportFilters, setReportFilters] = useState(blankReportFilters);
+  const [userReport, setUserReport] = useState(null);
+  const [serviceReport, setServiceReport] = useState(null);
+  const [queueStats, setQueueStats] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [exportingType, setExportingType] = useState(null);
+  const [hasLoadedReports, setHasLoadedReports] = useState(false);
 
   async function refreshQueueSummary() {
     const { summary } = await fetchQueueSummary(token);
@@ -166,6 +185,61 @@ export default function App({ userEmail, token, onLogout }) {
       setServingNext(false);
     }
   }
+  function handleReportFilterChange(event) {
+    const { name, value } = event.target;
+    setReportFilters((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleGenerateReport(event) {
+    event?.preventDefault();
+    setReportLoading(true);
+    setReportError("");
+    try {
+      const filters = {
+        startDate: reportFilters.startDate || undefined,
+        endDate: reportFilters.endDate || undefined,
+        serviceId: reportFilters.serviceId || undefined,
+      };
+      const [usersRes, servicesRes, statsRes] = await Promise.all([
+        fetchUserParticipationReport(token, filters),
+        fetchServiceActivityReport(token, filters),
+        fetchQueueUsageStats(token, filters),
+      ]);
+      setUserReport(usersRes.report);
+      setServiceReport(servicesRes.report);
+      setQueueStats(statsRes.stats);
+    } catch (err) {
+      setReportError(err.message);
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
+  async function handleExportReport(type) {
+    setExportingType(type);
+    setReportError("");
+    try {
+      const filters = {
+        startDate: reportFilters.startDate || undefined,
+        endDate: reportFilters.endDate || undefined,
+        serviceId: reportFilters.serviceId || undefined,
+      };
+      await downloadReportCsv(token, type, filters);
+    } catch (err) {
+      setReportError(err.message);
+    } finally {
+      setExportingType(null);
+    }
+  }
+
+  useEffect(() => {
+    if (activeScreen === "reports" && !hasLoadedReports) {
+      setHasLoadedReports(true);
+      handleGenerateReport();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeScreen, hasLoadedReports]);
+
   const selectedQueue = selectedQueueEntries;
 
   return (
@@ -193,6 +267,12 @@ export default function App({ userEmail, token, onLogout }) {
           onClick={() => setActiveScreen("queue-management")}
         >
           Queue Management
+        </button>
+        <button
+          className={activeScreen === "reports" ? "nav-btn active" : "nav-btn"}
+          onClick={() => setActiveScreen("reports")}
+        >
+          Reports
         </button>
 
         {onLogout && (
@@ -437,6 +517,187 @@ export default function App({ userEmail, token, onLogout }) {
                 </ul>
               )}
             </article>
+          </section>
+        )}
+
+        {activeScreen === "reports" && (
+          <section>
+            <h2>Reporting</h2>
+
+            <form className="card form-layout" onSubmit={handleGenerateReport}>
+              <h3>Filters</h3>
+              <label>
+                Start date
+                <input
+                  type="date"
+                  name="startDate"
+                  value={reportFilters.startDate}
+                  onChange={handleReportFilterChange}
+                />
+              </label>
+              <label>
+                End date
+                <input
+                  type="date"
+                  name="endDate"
+                  value={reportFilters.endDate}
+                  onChange={handleReportFilterChange}
+                />
+              </label>
+              <label>
+                Service
+                <select name="serviceId" value={reportFilters.serviceId} onChange={handleReportFilterChange}>
+                  <option value="">All services</option>
+                  {services.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {reportError && <span className="error">{reportError}</span>}
+
+              <div className="inline-actions">
+                <button className="btn btn-primary" type="submit" disabled={reportLoading}>
+                  {reportLoading ? "Generating…" : "Generate Report"}
+                </button>
+              </div>
+            </form>
+
+            {queueStats && (
+              <article className="card">
+                <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+                  <h3>Queue Usage Statistics</h3>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => handleExportReport("stats")}
+                    disabled={exportingType === "stats"}
+                  >
+                    {exportingType === "stats" ? "Exporting…" : "Export CSV"}
+                  </button>
+                </div>
+                <div className="stat-grid">
+                  <div className="stat-tile">
+                    <p className="stat-tile-label">Total queue entries</p>
+                    <p className="stat-tile-value">{queueStats.totalEntries}</p>
+                  </div>
+                  <div className="stat-tile">
+                    <p className="stat-tile-label">Users served</p>
+                    <p className="stat-tile-value">{queueStats.usersServed}</p>
+                  </div>
+                  <div className="stat-tile">
+                    <p className="stat-tile-label">Left queue</p>
+                    <p className="stat-tile-value">{queueStats.leftQueueCount}</p>
+                  </div>
+                  <div className="stat-tile">
+                    <p className="stat-tile-label">No-shows</p>
+                    <p className="stat-tile-value">{queueStats.noShowCount}</p>
+                  </div>
+                  <div className="stat-tile">
+                    <p className="stat-tile-label">Avg. wait (min)</p>
+                    <p className="stat-tile-value">{queueStats.averageWaitMinutes ?? "N/A"}</p>
+                  </div>
+                  <div className="stat-tile">
+                    <p className="stat-tile-label">Currently waiting</p>
+                    <p className="stat-tile-value">{queueStats.currentlyWaiting}</p>
+                  </div>
+                </div>
+              </article>
+            )}
+
+            {serviceReport && (
+              <article className="card">
+                <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+                  <h3>Service Activity Report</h3>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => handleExportReport("services")}
+                    disabled={exportingType === "services"}
+                  >
+                    {exportingType === "services" ? "Exporting…" : "Export CSV"}
+                  </button>
+                </div>
+                <div className="report-table-wrapper">
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th>Service</th>
+                        <th>Priority</th>
+                        <th>Queue status</th>
+                        <th>Currently waiting</th>
+                        <th>Served</th>
+                        <th>Left queue</th>
+                        <th>No-shows</th>
+                        <th>Avg. wait (min)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {serviceReport.map((row) => (
+                        <tr key={row.serviceId}>
+                          <td>{row.name}</td>
+                          <td>{row.priority}</td>
+                          <td>{row.queueStatus}</td>
+                          <td>{row.currentQueueLength}</td>
+                          <td>{row.servedCount}</td>
+                          <td>{row.leftQueueCount}</td>
+                          <td>{row.noShowCount}</td>
+                          <td>{row.averageWaitMinutes ?? "N/A"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            )}
+
+            {userReport && (
+              <article className="card">
+                <div className="inline-actions" style={{ justifyContent: "space-between" }}>
+                  <h3>User Participation Report</h3>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => handleExportReport("users")}
+                    disabled={exportingType === "users"}
+                  >
+                    {exportingType === "users" ? "Exporting…" : "Export CSV"}
+                  </button>
+                </div>
+                <div className="report-table-wrapper">
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Total visits</th>
+                        <th>Served</th>
+                        <th>Left queue</th>
+                        <th>No-shows</th>
+                        <th>Last visit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {userReport.map((row) => (
+                        <tr key={row.userId}>
+                          <td>{row.fullName}</td>
+                          <td>{row.email}</td>
+                          <td>{row.role}</td>
+                          <td>{row.totalVisits}</td>
+                          <td>{row.servedCount}</td>
+                          <td>{row.leftQueueCount}</td>
+                          <td>{row.noShowCount}</td>
+                          <td>{row.lastVisit ? new Date(row.lastVisit).toLocaleDateString() : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            )}
           </section>
         )}
       </main>

@@ -1,0 +1,4 @@
+userId,email,fullName,role,totalVisits,servedCount,leftQueueCount,noShowCount,lastVisit
+1,jane@example.com,Jane Doe,user,4,3,1,0,2026-08-06T19:58:22.258Z
+2,admin@queuesmart.com,Admin User,admin,0,0,0,0,
+3,casey@example.com,Casey Newton,user,0,0,0,0,

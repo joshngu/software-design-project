@@ -53,10 +53,6 @@ const SCHEMA = `
     priority TEXT NOT NULL CHECK (priority IN ('low', 'medium', 'high'))
   );
 
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_entries_unique_waiting_user
-  ON queue_entries(queue_id, user_id)
-  WHERE status = 'waiting';
-
   CREATE TABLE IF NOT EXISTS history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES user_credentials(id) ON DELETE CASCADE,
@@ -128,6 +124,14 @@ function applySchema(instance) {
   instance.pragma("foreign_keys = ON");
   instance.exec(SCHEMA);
   migrateLegacyQueueSchema(instance);
+  // Created last, once queue_entries is guaranteed to be in its current shape
+  // (freshly created above, or rebuilt by migrateLegacyQueueSchema) — creating
+  // it any earlier would fail against a pre-migration legacy table.
+  instance.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_queue_entries_unique_waiting_user
+    ON queue_entries(queue_id, user_id)
+    WHERE status = 'waiting';
+  `);
 }
 
 function isoMinutesAgo(minutes) {

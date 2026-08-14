@@ -21,10 +21,9 @@ export function createApp() {
   app.use("/api/queue", queueRouter);
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/history", historyRouter);
+  app.use("/api/reports", reportingRouter);
 
   app.use(errorHandler);
-  
-  app.use("/api/reports", reportingRouter);
 
   return app;
 }
