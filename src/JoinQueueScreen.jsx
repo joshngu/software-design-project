@@ -14,6 +14,7 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [selectedPriority, setSelectedPriority] = useState("medium");
 
   useEffect(() => {
     let cancelled = false;
@@ -42,8 +43,15 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
     [myQueues, service?.id]
   );
 
+  useEffect(() => {
+    if (!service) return;
+    setSelectedPriority(service.priority || "medium");
+  }, [service?.id]);
+
   function selectService(id) {
     setSelectedServiceId(id);
+    const chosen = services.find((candidate) => candidate.id === id);
+    setSelectedPriority(chosen?.priority || "medium");
   }
 
   async function refreshMyQueues() {
@@ -56,7 +64,7 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
     setSubmitting(true);
     setActionError("");
     try {
-      await joinQueue(token, { serviceId: service.id });
+      await joinQueue(token, { serviceId: service.id, priority: selectedPriority });
       await refreshMyQueues();
     } catch (err) {
       setActionError(err.message);
@@ -134,6 +142,31 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
             </p>
           </div>
 
+          <div className="mt-4">
+            <label
+              htmlFor="queue-priority"
+              className="text-xs font-medium"
+              style={{ color: COLORS.slate }}
+            >
+              Priority level (rules-based ordering)
+            </label>
+            <select
+              id="queue-priority"
+              className="qs-input text-sm px-3 py-2 rounded-lg mt-2"
+              style={{ border: `1px solid ${COLORS.line}`, background: "#fff", color: COLORS.ink }}
+              value={selectedPriority}
+              onChange={(event) => setSelectedPriority(event.target.value)}
+              disabled={!!queueForSelectedService || submitting}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+            <p className="text-xs mt-2" style={{ color: COLORS.slate }}>
+              Rule: higher priority users are served first; same priority uses arrival order.
+            </p>
+          </div>
+
           {loadError && (
             <p className="mt-5 text-sm flex items-center gap-1.5" style={{ color: COLORS.coral }}>
               <CircleAlert size={16} /> {loadError}
@@ -155,7 +188,8 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
             <div className="mt-5">
               <p className="text-sm flex items-center gap-1.5" style={{ color: COLORS.greenText }}>
                 <CheckCircle2 size={16} /> You're in queue at position #{queueForSelectedService.position}. Estimated
-                wait: {queueForSelectedService.estimatedWaitMinutes} min.
+                wait: {queueForSelectedService.estimatedWaitMinutes} min. Priority:{" "}
+                {queueForSelectedService.priority}.
               </p>
               <button
                 type="button"

@@ -82,6 +82,25 @@ describe("admin queue endpoints", () => {
     expect(serveRes.status).toBe(200);
     expect(serveRes.body.served.userId).toBe(1);
   });
+
+  it("returns queue ordered by priority then arrival", async () => {
+    const userToken = await loginAs("jane@example.com", "Passw0rd!");
+    await request(app)
+      .post("/api/queue/join")
+      .set("Authorization", `Bearer ${userToken}`)
+      .send({ serviceId: 1, priority: "low" });
+
+    const adminToken = await loginAs("admin@queuesmart.com", "Passw0rd!");
+    await request(app)
+      .post("/api/queue/join")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ serviceId: 1, priority: "high" });
+
+    const queueRes = await request(app).get("/api/queue/1").set("Authorization", `Bearer ${adminToken}`);
+    expect(queueRes.status).toBe(200);
+    expect(queueRes.body.queue[0].userId).toBe(2);
+    expect(queueRes.body.queue[1].userId).toBe(1);
+  });
 });
 
 describe("GET /api/queue/me", () => {

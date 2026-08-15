@@ -38,6 +38,23 @@ describe("joinQueue", () => {
     expect(queue[0].userId).toBe(2);
     expect(highPriority.position).toBe(1);
   });
+
+  it("keeps arrival order when users have the same priority", () => {
+    const first = joinQueue({
+      user: { id: 1, email: "jane@example.com" },
+      serviceId: 2,
+      priority: "medium",
+    });
+    const second = joinQueue({
+      user: { id: 2, email: "alex@example.com" },
+      serviceId: 2,
+      priority: "medium",
+    });
+    const queue = listQueueForService(2);
+
+    expect(queue[0].userId).toBe(first.userId);
+    expect(queue[1].userId).toBe(second.userId);
+  });
 });
 
 describe("leaveQueue", () => {
@@ -64,6 +81,14 @@ describe("serveNextUser", () => {
     const history = listHistoryForUser(1);
     expect(history).toHaveLength(1);
     expect(history[0].outcome).toBe("served");
+  });
+
+  it("serves high-priority users before low-priority users", () => {
+    joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 3, priority: "low" });
+    joinQueue({ user: { id: 2, email: "sam@example.com" }, serviceId: 3, priority: "high" });
+
+    const served = serveNextUser(3);
+    expect(served.userId).toBe(2);
   });
 });
 
