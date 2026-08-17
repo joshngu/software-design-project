@@ -111,3 +111,28 @@ describe("PUT /api/services/:id", () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe("DELETE /api/services/:id", () => {
+  it("deletes an existing service for an admin", async () => {
+    const token = await loginAs("admin@queuesmart.com", "Passw0rd!");
+    const res = await request(app).delete("/api/services/1").set("Authorization", `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.service).toMatchObject({ id: 1, name: "General Checkup" });
+
+    const listRes = await request(app).get("/api/services").set("Authorization", `Bearer ${token}`);
+    expect(listRes.body.services.map((service) => service.id)).not.toContain(1);
+  });
+
+  it("returns 404 for a non-existent service", async () => {
+    const token = await loginAs("admin@queuesmart.com", "Passw0rd!");
+    const res = await request(app).delete("/api/services/999").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a non-admin user with 403", async () => {
+    const token = await loginAs("jane@example.com", "Passw0rd!");
+    const res = await request(app).delete("/api/services/1").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+});

@@ -66,6 +66,15 @@ describe("admin queue endpoints", () => {
     expect(res.status).toBe(403);
   });
 
+  it("allows authenticated users to read queue summary", async () => {
+    const userToken = await loginAs("jane@example.com", "Passw0rd!");
+    const res = await request(app).get("/api/queue/summary").set("Authorization", `Bearer ${userToken}`);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.summary)).toBe(true);
+    expect(res.body.summary.length).toBeGreaterThan(0);
+  });
+
   it("allows admins to view queue and serve next user", async () => {
     const userToken = await loginAs("jane@example.com", "Passw0rd!");
     await request(app).post("/api/queue/join").set("Authorization", `Bearer ${userToken}`).send({ serviceId: 1 });

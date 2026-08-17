@@ -4,6 +4,7 @@ import {
   fetchServices,
   createService,
   updateService,
+  deleteService as apiDeleteService,
   fetchQueueSummary,
   fetchQueueForService,
   serveNextUser as apiServeNextUser,
@@ -42,6 +43,7 @@ export default function App({ userEmail, token, onLogout }) {
   const [editingServiceId, setEditingServiceId] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [deletingServiceId, setDeletingServiceId] = useState(null);
 
   const [reportFilters, setReportFilters] = useState(blankReportFilters);
   const [userReport, setUserReport] = useState(null);
@@ -171,6 +173,36 @@ export default function App({ userEmail, token, onLogout }) {
     setEditingServiceId(null);
     setFormData(blankForm);
     setFormErrors({});
+  }
+
+  async function handleDeleteService(service) {
+    const confirmed = window.confirm(`Delete "${service.name}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setLoadError("");
+    setDeletingServiceId(service.id);
+    try {
+      await apiDeleteService(token, service.id);
+      setServices((prev) => {
+        const next = prev.filter((s) => s.id !== service.id);
+        setSelectedServiceId((current) => (current === service.id ? next[0]?.id ?? null : current));
+        return next;
+      });
+      setQueueSummaryByService((prev) => {
+        const next = { ...prev };
+        delete next[service.id];
+        return next;
+      });
+      setSelectedQueueEntries((prev) => prev.filter((entry) => entry.serviceId !== service.id));
+
+      if (editingServiceId === service.id) {
+        handleCancelEdit();
+      }
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setDeletingServiceId(null);
+    }
   }
 
   async function handleServeNextUser(serviceId) {
@@ -453,13 +485,24 @@ export default function App({ userEmail, token, onLogout }) {
                         {service.priority}
                       </small>
                     </div>
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={() => handleEditService(service)}
-                    >
-                      Edit
-                    </button>
+                    <div className="inline-actions">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={() => handleEditService(service)}
+                        disabled={deletingServiceId === service.id}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        type="button"
+                        onClick={() => handleDeleteService(service)}
+                        disabled={deletingServiceId === service.id}
+                      >
+                        {deletingServiceId === service.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

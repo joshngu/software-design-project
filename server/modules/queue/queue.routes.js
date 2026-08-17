@@ -32,7 +32,7 @@ queueRouter.get("/me", requireAuth, (req, res) => {
   });
 });
 
-queueRouter.get("/summary", requireAuth, requireAdmin, (req, res) => {
+queueRouter.get("/summary", requireAuth, (req, res) => {
   const summary = queueService.listQueueSummary();
   res.status(200).json({ summary });
 });

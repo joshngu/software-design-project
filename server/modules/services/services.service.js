@@ -46,3 +46,13 @@ export function updateService(id, { name, description, duration, priority }) {
 
   return getServiceById(id);
 }
+
+export function deleteService(id) {
+  const existing = getServiceById(id);
+  if (!existing) {
+    throw new ApiError(404, "Service not found.");
+  }
+
+  getDb().prepare("DELETE FROM services WHERE id = ?").run(Number(id));
+  return existing;
+}

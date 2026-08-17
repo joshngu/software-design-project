@@ -51,6 +51,10 @@ export function updateService(token, id, payload) {
   return request(`/services/${id}`, { method: "PUT", body: payload, token });
 }
 
+export function deleteService(token, id) {
+  return request(`/services/${id}`, { method: "DELETE", token });
+}
+
 export function fetchNotifications(token) {
   return request("/notifications", { token });
 }
