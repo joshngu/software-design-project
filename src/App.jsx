@@ -44,6 +44,7 @@ export default function App({ userEmail, token, onLogout }) {
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [deletingServiceId, setDeletingServiceId] = useState(null);
+  const [confirmDeleteServiceId, setConfirmDeleteServiceId] = useState(null);
 
   const [reportFilters, setReportFilters] = useState(blankReportFilters);
   const [userReport, setUserReport] = useState(null);
@@ -175,10 +176,15 @@ export default function App({ userEmail, token, onLogout }) {
     setFormErrors({});
   }
 
-  async function handleDeleteService(service) {
-    const confirmed = window.confirm(`Delete "${service.name}"? This cannot be undone.`);
-    if (!confirmed) return;
+  function handleRequestDeleteService(serviceId) {
+    setConfirmDeleteServiceId(serviceId);
+  }
 
+  function handleCancelDeleteService() {
+    setConfirmDeleteServiceId(null);
+  }
+
+  async function handleDeleteService(service) {
     setLoadError("");
     setDeletingServiceId(service.id);
     try {
@@ -202,6 +208,7 @@ export default function App({ userEmail, token, onLogout }) {
       setLoadError(err.message);
     } finally {
       setDeletingServiceId(null);
+      setConfirmDeleteServiceId(null);
     }
   }
 
@@ -273,6 +280,7 @@ export default function App({ userEmail, token, onLogout }) {
   }, [activeScreen, hasLoadedReports]);
 
   const selectedQueue = selectedQueueEntries;
+  const confirmDeleteService = services.find((service) => service.id === confirmDeleteServiceId) || null;
 
   return (
     <div className="app-shell">
@@ -497,10 +505,10 @@ export default function App({ userEmail, token, onLogout }) {
                       <button
                         className="btn btn-danger"
                         type="button"
-                        onClick={() => handleDeleteService(service)}
+                        onClick={() => handleRequestDeleteService(service.id)}
                         disabled={deletingServiceId === service.id}
                       >
-                        {deletingServiceId === service.id ? "Deleting..." : "Delete"}
+                        Delete
                       </button>
                     </div>
                   </li>
@@ -744,6 +752,35 @@ export default function App({ userEmail, token, onLogout }) {
           </section>
         )}
       </main>
+
+      {confirmDeleteService && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-service-title">
+          <div className="modal-card">
+            <h3 id="delete-service-title">Delete service?</h3>
+            <p>
+              Are you sure you want to delete <strong>{confirmDeleteService.name}</strong>? This cannot be undone.
+            </p>
+            <div className="inline-actions">
+              <button
+                className="btn btn-danger"
+                type="button"
+                onClick={() => handleDeleteService(confirmDeleteService)}
+                disabled={deletingServiceId === confirmDeleteService.id}
+              >
+                {deletingServiceId === confirmDeleteService.id ? "Deleting..." : "Delete service"}
+              </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={handleCancelDeleteService}
+                disabled={deletingServiceId === confirmDeleteService.id}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
