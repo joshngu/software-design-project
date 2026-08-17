@@ -35,8 +35,8 @@ function createSession(userId) {
   return token;
 }
 
-export function register({ email, password, fullName, phone, role }) {
-  const errors = validateRegistration({ email, password, fullName, phone, role });
+export function register({ email, password, fullName, phone }) {
+  const errors = validateRegistration({ email, password, fullName, phone });
   if (Object.keys(errors).length > 0) {
     throw new ApiError(400, "Validation failed", errors);
   }
@@ -52,7 +52,7 @@ export function register({ email, password, fullName, phone, role }) {
 
   const passwordHash = bcrypt.hashSync(password, 8);
   const insertUser = db.prepare("INSERT INTO user_credentials (email, password_hash, role) VALUES (?, ?, ?)");
-  const result = insertUser.run(email.trim(), passwordHash, role || "user");
+  const result = insertUser.run(email.trim(), passwordHash, "user");
 
   db.prepare("INSERT INTO user_profiles (user_id, full_name, email, phone) VALUES (?, ?, ?, ?)").run(
     result.lastInsertRowid,

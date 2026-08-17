@@ -4,14 +4,14 @@ import { validateJoinPayload, validateLeavePayload, validateServiceIdParam } fro
 
 describe("validateJoinPayload", () => {
   it("accepts a valid payload", () => {
-    const errors = validateJoinPayload({ serviceId: 1, priority: "high", displayName: "Jane Doe" });
+    const errors = validateJoinPayload({ serviceId: 1, displayName: "Jane Doe" });
     expect(errors).toEqual({});
   });
 
   it("returns errors for invalid required and typed fields", () => {
-    const errors = validateJoinPayload({ serviceId: "abc", priority: "urgent", displayName: "" });
+    const errors = validateJoinPayload({ serviceId: "abc", displayName: "" });
     expect(errors.serviceId).toBeTruthy();
-    expect(errors.priority).toBeTruthy();
+    expect(errors.priority).toBeUndefined();
     expect(errors.displayName).toBeTruthy();
   });
 

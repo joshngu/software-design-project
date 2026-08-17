@@ -206,8 +206,8 @@ export function listQueueSummary() {
   });
 }
 
-export function joinQueue({ user, serviceId, priority, displayName }) {
-  const payloadErrors = validateJoinPayload({ serviceId, priority, displayName });
+export function joinQueue({ user, serviceId, displayName }) {
+  const payloadErrors = validateJoinPayload({ serviceId, displayName });
   if (Object.keys(payloadErrors).length > 0) {
     throw new ApiError(400, "Validation failed", payloadErrors);
   }
@@ -250,7 +250,7 @@ export function joinQueue({ user, serviceId, priority, displayName }) {
       user.id,
       nextPosition,
       joinTime,
-      priority || service.priority || "medium",
+      service.priority || "medium",
       displayName?.trim() || deriveDisplayName(user)
     );
 

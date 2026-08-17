@@ -1,5 +1,4 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const VALID_ROLES = ["user", "admin"];
 const MAX_EMAIL_LENGTH = 254;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 72;
@@ -7,7 +6,7 @@ const MAX_FULL_NAME_LENGTH = 100;
 const MAX_PHONE_LENGTH = 30;
 const PHONE_RE = /^[0-9+()\-.\s]+$/;
 
-export function validateRegistration({ email, password, fullName, phone, role }) {
+export function validateRegistration({ email, password, fullName, phone }) {
   const errors = {};
 
   if (typeof email !== "string" || !email.trim()) {
@@ -42,10 +41,6 @@ export function validateRegistration({ email, password, fullName, phone, role })
     } else if (!PHONE_RE.test(phone.trim())) {
       errors.phone = "Enter a valid phone number.";
     }
-  }
-
-  if (role !== undefined && role !== null && !VALID_ROLES.includes(role)) {
-    errors.role = "Role must be either 'user' or 'admin'.";
   }
 
   return errors;

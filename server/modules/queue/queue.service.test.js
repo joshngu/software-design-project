@@ -26,29 +26,24 @@ describe("joinQueue", () => {
     expect(second.estimatedWaitMinutes).toBe(30);
   });
 
-  it("orders higher priority users ahead of lower priority users", () => {
-    joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 1, priority: "low" });
-    const highPriority = joinQueue({
-      user: { id: 2, email: "alex@example.com" },
-      serviceId: 1,
-      priority: "high",
-    });
-    const queue = listQueueForService(1);
+  it("assigns priority from service configuration", () => {
+    const checkupJoin = joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 1 });
+    const vaccinationJoin = joinQueue({ user: { id: 2, email: "alex@example.com" }, serviceId: 2 });
+    const labJoin = joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 3 });
 
-    expect(queue[0].userId).toBe(2);
-    expect(highPriority.position).toBe(1);
+    expect(checkupJoin.priority).toBe("medium");
+    expect(vaccinationJoin.priority).toBe("high");
+    expect(labJoin.priority).toBe("low");
   });
 
   it("keeps arrival order when users have the same priority", () => {
     const first = joinQueue({
       user: { id: 1, email: "jane@example.com" },
       serviceId: 2,
-      priority: "medium",
     });
     const second = joinQueue({
       user: { id: 2, email: "alex@example.com" },
       serviceId: 2,
-      priority: "medium",
     });
     const queue = listQueueForService(2);
 
@@ -83,12 +78,12 @@ describe("serveNextUser", () => {
     expect(history[0].outcome).toBe("served");
   });
 
-  it("serves high-priority users before low-priority users", () => {
-    joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 3, priority: "low" });
-    joinQueue({ user: { id: 2, email: "sam@example.com" }, serviceId: 3, priority: "high" });
+  it("serves users in arrival order within the same service", () => {
+    joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 3 });
+    joinQueue({ user: { id: 2, email: "sam@example.com" }, serviceId: 3 });
 
     const served = serveNextUser(3);
-    expect(served.userId).toBe(2);
+    expect(served.userId).toBe(1);
   });
 });
 
@@ -104,12 +99,12 @@ describe("listQueueSummary / listQueuesForUser", () => {
 
   it("returns active queues for a specific user", () => {
     joinQueue({ user: { id: 1, email: "jane@example.com" }, serviceId: 1 });
-    joinQueue({ user: { id: 2, email: "alex@example.com" }, serviceId: 1, priority: "high" });
+    joinQueue({ user: { id: 2, email: "alex@example.com" }, serviceId: 1 });
 
     const queues = listQueuesForUser(1);
     expect(queues).toHaveLength(1);
     expect(queues[0].serviceId).toBe(1);
-    expect(queues[0].position).toBe(2);
+    expect(queues[0].position).toBe(1);
   });
 });
 

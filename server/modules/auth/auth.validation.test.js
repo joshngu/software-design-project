@@ -4,9 +4,7 @@ import { validateRegistration, validateLogin } from "./auth.validation.js";
 
 describe("validateRegistration", () => {
   it("passes for a valid user registration", () => {
-    expect(
-      validateRegistration({ email: "a@b.com", password: "Passw0rd!", fullName: "A B", role: "user" })
-    ).toEqual({});
+    expect(validateRegistration({ email: "a@b.com", password: "Passw0rd!", fullName: "A B" })).toEqual({});
   });
 
   it("requires an email", () => {
@@ -43,16 +41,6 @@ describe("validateRegistration", () => {
   it("rejects a password without a letter", () => {
     const errors = validateRegistration({ email: "a@b.com", password: "12345678" });
     expect(errors.password).toMatch(/letter and one number/i);
-  });
-
-  it("rejects an invalid role", () => {
-    const errors = validateRegistration({ email: "a@b.com", password: "Passw0rd!", role: "superuser" });
-    expect(errors.role).toMatch(/user' or 'admin'/i);
-  });
-
-  it("allows an omitted role", () => {
-    const errors = validateRegistration({ email: "a@b.com", password: "Passw0rd!", fullName: "A B" });
-    expect(errors.role).toBeUndefined();
   });
 
   it("requires a full name", () => {

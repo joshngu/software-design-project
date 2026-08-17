@@ -6,11 +6,10 @@ import * as queueService from "./queue.service.js";
 export const queueRouter = Router();
 
 queueRouter.post("/join", requireAuth, (req, res) => {
-  const { serviceId, priority, displayName } = req.body ?? {};
+  const { serviceId, displayName } = req.body ?? {};
   const queueEntry = queueService.joinQueue({
     user: req.user,
     serviceId,
-    priority,
     displayName,
   });
   res.status(201).json({ queueEntry });

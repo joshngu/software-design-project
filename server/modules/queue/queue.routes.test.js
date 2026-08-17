@@ -40,7 +40,7 @@ describe("POST /api/queue/join", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.errors.serviceId).toBeTruthy();
-    expect(res.body.errors.priority).toBeTruthy();
+    expect(res.body.errors.priority).toBeUndefined();
   });
 });
 
@@ -83,7 +83,7 @@ describe("admin queue endpoints", () => {
     expect(serveRes.body.served.userId).toBe(1);
   });
 
-  it("returns queue ordered by priority then arrival", async () => {
+  it("ignores client-provided priority and keeps arrival order", async () => {
     const userToken = await loginAs("jane@example.com", "Passw0rd!");
     await request(app)
       .post("/api/queue/join")
@@ -98,8 +98,10 @@ describe("admin queue endpoints", () => {
 
     const queueRes = await request(app).get("/api/queue/1").set("Authorization", `Bearer ${adminToken}`);
     expect(queueRes.status).toBe(200);
-    expect(queueRes.body.queue[0].userId).toBe(2);
-    expect(queueRes.body.queue[1].userId).toBe(1);
+    expect(queueRes.body.queue[0].userId).toBe(1);
+    expect(queueRes.body.queue[1].userId).toBe(2);
+    expect(queueRes.body.queue[0].priority).toBe("medium");
+    expect(queueRes.body.queue[1].priority).toBe("medium");
   });
 });
 

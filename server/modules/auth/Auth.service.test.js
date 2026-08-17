@@ -14,7 +14,6 @@ describe("register", () => {
       password: "Passw0rd!",
       fullName: "New User",
       phone: "555-1234",
-      role: "user",
     });
 
     expect(token).toBeDefined();
@@ -31,6 +30,16 @@ describe("register", () => {
       email: "role.default@example.com",
       password: "Passw0rd!",
       fullName: "Role Default",
+    });
+    expect(user.role).toBe("user");
+  });
+
+  it("ignores role in self-registration payload", () => {
+    const { user } = register({
+      email: "attempt.admin@example.com",
+      password: "Passw0rd!",
+      fullName: "Attempt Admin",
+      role: "admin",
     });
     expect(user.role).toBe("user");
   });

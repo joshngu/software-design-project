@@ -31,8 +31,8 @@ async function request(path, { method = "GET", body, token } = {}) {
   return data;
 }
 
-export function registerUser({ email, password, fullName, phone, role }) {
-  return request("/auth/register", { method: "POST", body: { email, password, fullName, phone, role } });
+export function registerUser({ email, password, fullName, phone }) {
+  return request("/auth/register", { method: "POST", body: { email, password, fullName, phone } });
 }
 
 export function loginUser({ email, password }) {
@@ -63,11 +63,11 @@ export function fetchHistory(token) {
   return request("/history", { token });
 }
 
-export function joinQueue(token, { serviceId, priority, displayName }) {
+export function joinQueue(token, { serviceId, displayName }) {
   return request("/queue/join", {
     method: "POST",
     token,
-    body: { serviceId, priority, displayName },
+    body: { serviceId, displayName },
   });
 }
 
