@@ -5,7 +5,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  ShieldCheck,
   User as UserIcon,
   Phone,
   ArrowRight,
@@ -225,19 +224,6 @@ function Field({ id, label, icon: Icon, error, children, rightSlot }) {
   );
 }
 
-function RoleButton({ active, onClick, icon: Icon, label }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium"
-      style={{ background: active ? COLORS.ink : "transparent", color: active ? COLORS.paper : COLORS.slate }}
-    >
-      <Icon size={14} /> {label}
-    </button>
-  );
-}
-
 /* ---------------------------------------------------------
    Login
 --------------------------------------------------------- */
@@ -371,7 +357,6 @@ function RegisterPanel({ onRegister, goLogin }) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [role, setRole] = useState("user");
   const [showPw, setShowPw] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [touchedPw, setTouchedPw] = useState(false);
@@ -410,7 +395,6 @@ function RegisterPanel({ onRegister, goLogin }) {
         password,
         fullName: fullName.trim(),
         phone: phone.trim() || undefined,
-        role,
       });
       setErrors({});
       onRegister(user, token);
@@ -435,21 +419,6 @@ function RegisterPanel({ onRegister, goLogin }) {
       </p>
 
       <div className="mt-6 space-y-4">
-        <div>
-          <label className="block text-xs font-medium mb-2" style={{ color: COLORS.slate }}>
-            I'm registering as
-          </label>
-          <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: COLORS.line }}>
-            <RoleButton active={role === "user"} onClick={() => setRole("user")} icon={UserIcon} label="Customer" />
-            <RoleButton
-              active={role === "admin"}
-              onClick={() => setRole("admin")}
-              icon={ShieldCheck}
-              label="Administrator"
-            />
-          </div>
-        </div>
-
         <Field id="reg-full-name" label="Full name" icon={UserIcon} error={errors.fullName}>
           <input
             id="reg-full-name"

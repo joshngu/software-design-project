@@ -14,7 +14,7 @@ describe("POST /api/auth/register", () => {
   it("registers a new user and returns a token", async () => {
     const res = await request(app)
       .post("/api/auth/register")
-      .send({ email: "new@example.com", password: "Passw0rd!", fullName: "New Person", role: "user" });
+      .send({ email: "new@example.com", password: "Passw0rd!", fullName: "New Person" });
 
     expect(res.status).toBe(201);
     expect(res.body.token).toBeTruthy();
@@ -43,6 +43,18 @@ describe("POST /api/auth/register", () => {
       .post("/api/auth/register")
       .send({ email: "new2@example.com", password: "Passw0rd!", fullName: "New Person" });
 
+    expect(res.body.user.role).toBe("user");
+  });
+
+  it("does not allow self-registering as admin", async () => {
+    const res = await request(app).post("/api/auth/register").send({
+      email: "attempt-admin@example.com",
+      password: "Passw0rd!",
+      fullName: "Admin Attempt",
+      role: "admin",
+    });
+
+    expect(res.status).toBe(201);
     expect(res.body.user.role).toBe("user");
   });
 

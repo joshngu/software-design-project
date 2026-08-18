@@ -1,4 +1,3 @@
-const VALID_PRIORITIES = ["low", "medium", "high"];
 const MAX_DISPLAY_NAME_LENGTH = 80;
 
 function validateServiceIdValue(serviceId) {
@@ -9,7 +8,7 @@ function validateServiceIdValue(serviceId) {
   return null;
 }
 
-export function validateJoinPayload({ serviceId, priority, displayName }) {
+export function validateJoinPayload({ serviceId, displayName }) {
   const errors = {};
 
   const serviceIdError = validateServiceIdValue(serviceId);
@@ -22,14 +21,6 @@ export function validateJoinPayload({ serviceId, priority, displayName }) {
       errors.displayName = "Display name must be a non-empty string when provided.";
     } else if (displayName.trim().length > MAX_DISPLAY_NAME_LENGTH) {
       errors.displayName = `Display name must not exceed ${MAX_DISPLAY_NAME_LENGTH} characters.`;
-    }
-  }
-
-  if (priority !== undefined && priority !== null && priority !== "") {
-    if (typeof priority !== "string") {
-      errors.priority = "Priority must be a string.";
-    } else if (!VALID_PRIORITIES.includes(priority)) {
-      errors.priority = "Priority must be one of low, medium, or high.";
     }
   }
 

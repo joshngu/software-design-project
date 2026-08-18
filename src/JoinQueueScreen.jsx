@@ -3,7 +3,14 @@ import { Clock, CheckCircle2, CircleAlert } from "lucide-react";
 
 import { COLORS, FONT_MONO } from "./QueueSmartAuth";
 import { StatusBadge } from "./UserBadges";
-import { fetchMyQueues, joinQueue, leaveQueue } from "./api";
+import { fetchMyQueues, fetchQueueSummary, joinQueue, leaveQueue } from "./api";
+
+function mapSummaryByService(summary = []) {
+  return summary.reduce((acc, item) => {
+    acc[item.serviceId] = item;
+    return acc;
+  }, {});
+}
 
 /* ---------------------------------------------------------
   Join Queue — backend-driven queue join/leave flow.
@@ -14,14 +21,22 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [selectedPriority, setSelectedPriority] = useState("medium");
+  const [queueSummaryByService, setQueueSummaryByService] = useState({});
+
+  async function refreshQueueData() {
+    const [{ queues }, { summary }] = await Promise.all([fetchMyQueues(token), fetchQueueSummary(token)]);
+    setMyQueues(queues);
+    setQueueSummaryByService(mapSummaryByService(summary));
+  }
 
   useEffect(() => {
     let cancelled = false;
     setLoadingQueues(true);
-    fetchMyQueues(token)
-      .then(({ queues }) => {
-        if (!cancelled) setMyQueues(queues);
+    refreshQueueData()
+      .then(() => {
+        if (!cancelled) {
+          setLoadError("");
+        }
       })
       .catch((err) => {
         if (!cancelled) setLoadError(err.message);
@@ -42,21 +57,23 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
     () => myQueues.find((entry) => entry.serviceId === service?.id) || null,
     [myQueues, service?.id]
   );
+  const selectedServiceSummary = service ? queueSummaryByService[service.id] : null;
 
-  useEffect(() => {
-    if (!service) return;
-    setSelectedPriority(service.priority || "medium");
-  }, [service?.id]);
+  const recommendedService = useMemo(() => {
+    const candidates = services
+      .map((candidate) => ({ service: candidate, summary: queueSummaryByService[candidate.id] }))
+      .filter((item) => item.summary?.status === "open")
+      .sort(
+        (a, b) =>
+          a.summary.estimatedWaitForNewJoinMinutes - b.summary.estimatedWaitForNewJoinMinutes ||
+          a.summary.queueLength - b.summary.queueLength ||
+          a.service.id - b.service.id
+      );
+    return candidates[0] || null;
+  }, [services, queueSummaryByService]);
 
   function selectService(id) {
     setSelectedServiceId(id);
-    const chosen = services.find((candidate) => candidate.id === id);
-    setSelectedPriority(chosen?.priority || "medium");
-  }
-
-  async function refreshMyQueues() {
-    const { queues } = await fetchMyQueues(token);
-    setMyQueues(queues);
   }
 
   async function handleJoinQueue() {
@@ -64,8 +81,8 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
     setSubmitting(true);
     setActionError("");
     try {
-      await joinQueue(token, { serviceId: service.id, priority: selectedPriority });
-      await refreshMyQueues();
+      await joinQueue(token, { serviceId: service.id });
+      await refreshQueueData();
     } catch (err) {
       setActionError(err.message);
     } finally {
@@ -79,7 +96,7 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
     setActionError("");
     try {
       await leaveQueue(token, { serviceId: service.id });
-      await refreshMyQueues();
+      await refreshQueueData();
     } catch (err) {
       setActionError(err.message);
     } finally {
@@ -117,12 +134,44 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
             <p className="text-xs mt-1" style={{ color: COLORS.slate }}>
               {s.description}
             </p>
-            <div className="mt-3">
-              <StatusBadge status="open" />
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <StatusBadge status={queueSummaryByService[s.id]?.status || "open"} />
+              <span className="text-xs" style={{ color: COLORS.slate }}>
+                {queueSummaryByService[s.id]
+                  ? `~${queueSummaryByService[s.id].estimatedWaitForNewJoinMinutes} min`
+                  : "Calculating..."}
+              </span>
             </div>
           </button>
         ))}
       </div>
+
+      {!loadError && !loadingQueues && recommendedService && (
+        <div className="rounded-xl px-4 py-3" style={{ background: "#fff", border: `1px solid ${COLORS.line}` }}>
+          <p className="text-xs" style={{ color: COLORS.slate }}>
+            Recommended service (shortest estimated wait)
+          </p>
+          <p className="text-sm font-medium mt-1" style={{ color: COLORS.ink }}>
+            {recommendedService.service.name} ~{recommendedService.summary.estimatedWaitForNewJoinMinutes} min
+          </p>
+          {service?.id !== recommendedService.service.id && (
+            <button
+              type="button"
+              onClick={() => selectService(recommendedService.service.id)}
+              className="qs-btn mt-2 text-xs font-semibold px-3 py-2 rounded-lg"
+              style={{ border: `1px solid ${COLORS.line}`, color: COLORS.ink }}
+            >
+              Switch to recommended
+            </button>
+          )}
+        </div>
+      )}
+
+      {!loadError && !loadingQueues && !recommendedService && services.length > 0 && (
+        <p className="text-sm" style={{ color: COLORS.slate }}>
+          No open queues are available right now.
+        </p>
+      )}
 
       {service ? (
         <div className="rounded-2xl p-6" style={{ background: "#fff", border: `1px solid ${COLORS.line}` }}>
@@ -140,31 +189,11 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
             <p className="text-lg font-semibold flex items-center gap-1.5" style={{ color: COLORS.ink }}>
               <Clock size={16} /> {service.duration} min
             </p>
-          </div>
-
-          <div className="mt-4">
-            <label
-              htmlFor="queue-priority"
-              className="text-xs font-medium"
-              style={{ color: COLORS.slate }}
-            >
-              Priority level (rules-based ordering)
-            </label>
-            <select
-              id="queue-priority"
-              className="qs-input text-sm px-3 py-2 rounded-lg mt-2"
-              style={{ border: `1px solid ${COLORS.line}`, background: "#fff", color: COLORS.ink }}
-              value={selectedPriority}
-              onChange={(event) => setSelectedPriority(event.target.value)}
-              disabled={!!queueForSelectedService || submitting}
-            >
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-            <p className="text-xs mt-2" style={{ color: COLORS.slate }}>
-              Rule: higher priority users are served first; same priority uses arrival order.
-            </p>
+            {!!selectedServiceSummary && (
+              <p className="text-xs mt-1" style={{ color: COLORS.slate }}>
+                Estimated wait if you join now: ~{selectedServiceSummary.estimatedWaitForNewJoinMinutes} min
+              </p>
+            )}
           </div>
 
           {loadError && (
@@ -180,7 +209,7 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
 
           {!loadError && loadingQueues && (
             <p className="mt-5 text-sm" style={{ color: COLORS.slate }}>
-              Loading your queue status...
+              Loading queue status...
             </p>
           )}
 
@@ -188,8 +217,7 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
             <div className="mt-5">
               <p className="text-sm flex items-center gap-1.5" style={{ color: COLORS.greenText }}>
                 <CheckCircle2 size={16} /> You're in queue at position #{queueForSelectedService.position}. Estimated
-                wait: {queueForSelectedService.estimatedWaitMinutes} min. Priority:{" "}
-                {queueForSelectedService.priority}.
+                wait: {queueForSelectedService.estimatedWaitMinutes} min.
               </p>
               <button
                 type="button"
@@ -208,14 +236,19 @@ export default function JoinQueueScreen({ token, services, selectedServiceId, se
               <p className="text-xs" style={{ color: COLORS.slate }}>
                 Join this queue to receive wait-time estimates and notifications.
               </p>
+              {selectedServiceSummary?.status === "closed" && (
+                <p className="text-xs mt-2" style={{ color: COLORS.coral }}>
+                  This queue is currently closed.
+                </p>
+              )}
               <button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || selectedServiceSummary?.status === "closed"}
                 onClick={handleJoinQueue}
                 className="qs-btn mt-3 text-sm font-semibold px-4 py-2.5 rounded-lg"
-                style={{ background: COLORS.ink, color: COLORS.paper }}
+                style={{ background: COLORS.ink, color: COLORS.paper, opacity: selectedServiceSummary?.status === "closed" ? 0.6 : 1 }}
               >
-                {submitting ? "Joining..." : "Join queue"}
+                {submitting ? "Joining..." : selectedServiceSummary?.status === "closed" ? "Queue closed" : "Join queue"}
               </button>
             </div>
           )}

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
 import { resetTestDb } from "../../data/db.js";
-import { listServices, getServiceById, createService, updateService } from "./services.service.js";
+import { listServices, getServiceById, createService, updateService, deleteService } from "./services.service.js";
 
 beforeEach(() => {
   resetTestDb({ seedActivity: false });
@@ -97,5 +97,18 @@ describe("updateService", () => {
     expect(() =>
       updateService(1, { name: "", description: "Y", duration: 10, priority: "low" })
     ).toThrow(/validation failed/i);
+  });
+});
+
+describe("deleteService", () => {
+  it("deletes an existing service and returns the deleted row", () => {
+    const deleted = deleteService(1);
+    expect(deleted.id).toBe(1);
+    expect(getServiceById(1)).toBeUndefined();
+    expect(listServices()).toHaveLength(2);
+  });
+
+  it("throws a 404-style error for a non-existent service", () => {
+    expect(() => deleteService(9999)).toThrow(/not found/i);
   });
 });

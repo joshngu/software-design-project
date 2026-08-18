@@ -25,3 +25,8 @@ servicesRouter.put("/:id", requireAuth, requireAdmin, (req, res) => {
   });
   res.status(200).json({ service });
 });
+
+servicesRouter.delete("/:id", requireAuth, requireAdmin, (req, res) => {
+  const service = servicesService.deleteService(req.params.id);
+  res.status(200).json({ service });
+});

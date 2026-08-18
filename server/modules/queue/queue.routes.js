@@ -6,11 +6,10 @@ import * as queueService from "./queue.service.js";
 export const queueRouter = Router();
 
 queueRouter.post("/join", requireAuth, (req, res) => {
-  const { serviceId, priority, displayName } = req.body ?? {};
+  const { serviceId, displayName } = req.body ?? {};
   const queueEntry = queueService.joinQueue({
     user: req.user,
     serviceId,
-    priority,
     displayName,
   });
   res.status(201).json({ queueEntry });
@@ -33,7 +32,7 @@ queueRouter.get("/me", requireAuth, (req, res) => {
   });
 });
 
-queueRouter.get("/summary", requireAuth, requireAdmin, (req, res) => {
+queueRouter.get("/summary", requireAuth, (req, res) => {
   const summary = queueService.listQueueSummary();
   res.status(200).json({ summary });
 });

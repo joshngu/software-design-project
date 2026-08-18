@@ -4,6 +4,7 @@ import {
   fetchServices,
   createService,
   updateService,
+  deleteService as apiDeleteService,
   fetchQueueSummary,
   fetchQueueForService,
   serveNextUser as apiServeNextUser,
@@ -42,6 +43,8 @@ export default function App({ userEmail, token, onLogout }) {
   const [editingServiceId, setEditingServiceId] = useState(null);
   const [formErrors, setFormErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [deletingServiceId, setDeletingServiceId] = useState(null);
+  const [confirmDeleteServiceId, setConfirmDeleteServiceId] = useState(null);
 
   const [reportFilters, setReportFilters] = useState(blankReportFilters);
   const [userReport, setUserReport] = useState(null);
@@ -173,6 +176,42 @@ export default function App({ userEmail, token, onLogout }) {
     setFormErrors({});
   }
 
+  function handleRequestDeleteService(serviceId) {
+    setConfirmDeleteServiceId(serviceId);
+  }
+
+  function handleCancelDeleteService() {
+    setConfirmDeleteServiceId(null);
+  }
+
+  async function handleDeleteService(service) {
+    setLoadError("");
+    setDeletingServiceId(service.id);
+    try {
+      await apiDeleteService(token, service.id);
+      setServices((prev) => {
+        const next = prev.filter((s) => s.id !== service.id);
+        setSelectedServiceId((current) => (current === service.id ? next[0]?.id ?? null : current));
+        return next;
+      });
+      setQueueSummaryByService((prev) => {
+        const next = { ...prev };
+        delete next[service.id];
+        return next;
+      });
+      setSelectedQueueEntries((prev) => prev.filter((entry) => entry.serviceId !== service.id));
+
+      if (editingServiceId === service.id) {
+        handleCancelEdit();
+      }
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setDeletingServiceId(null);
+      setConfirmDeleteServiceId(null);
+    }
+  }
+
   async function handleServeNextUser(serviceId) {
     setServingNext(true);
     setQueueLoadError("");
@@ -241,6 +280,7 @@ export default function App({ userEmail, token, onLogout }) {
   }, [activeScreen, hasLoadedReports]);
 
   const selectedQueue = selectedQueueEntries;
+  const confirmDeleteService = services.find((service) => service.id === confirmDeleteServiceId) || null;
 
   return (
     <div className="app-shell">
@@ -453,13 +493,24 @@ export default function App({ userEmail, token, onLogout }) {
                         {service.priority}
                       </small>
                     </div>
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={() => handleEditService(service)}
-                    >
-                      Edit
-                    </button>
+                    <div className="inline-actions">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={() => handleEditService(service)}
+                        disabled={deletingServiceId === service.id}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        type="button"
+                        onClick={() => handleRequestDeleteService(service.id)}
+                        disabled={deletingServiceId === service.id}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -701,6 +752,35 @@ export default function App({ userEmail, token, onLogout }) {
           </section>
         )}
       </main>
+
+      {confirmDeleteService && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-service-title">
+          <div className="modal-card">
+            <h3 id="delete-service-title">Delete service?</h3>
+            <p>
+              Are you sure you want to delete <strong>{confirmDeleteService.name}</strong>? This cannot be undone.
+            </p>
+            <div className="inline-actions">
+              <button
+                className="btn btn-danger"
+                type="button"
+                onClick={() => handleDeleteService(confirmDeleteService)}
+                disabled={deletingServiceId === confirmDeleteService.id}
+              >
+                {deletingServiceId === confirmDeleteService.id ? "Deleting..." : "Delete service"}
+              </button>
+              <button
+                className="btn"
+                type="button"
+                onClick={handleCancelDeleteService}
+                disabled={deletingServiceId === confirmDeleteService.id}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
